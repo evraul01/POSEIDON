@@ -4330,7 +4330,8 @@ def plot_retrieved_parameters(axes_in, param_vals, plot_parameters, parameter_co
         elif ('delta_rel' in param):
             title_fmt = ".0f"
         elif (param == 'R_p_ref'):
-            label_exponent = round_sig_figs(np.floor(np.log10(np.abs(0.5 * (qh - ql)))), 1)
+            # label_exponent = round_sig_figs(np.floor(np.log10(np.abs(0.5 * (qh - ql)))), 1)
+            label_exponent = -2.0
             if label_exponent == -2.0:
                 title_fmt = ".2f"
             elif label_exponent == -3.0:
