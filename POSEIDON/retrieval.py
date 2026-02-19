@@ -20,7 +20,8 @@ from .parameters import split_params
 from .instrument import bin_spectrum_to_data
 from .utility import write_MultiNest_results, round_sig_figs, closest_index, \
                      write_retrieved_spectrum, write_retrieved_PT, \
-                     write_retrieved_log_X, confidence_intervals
+                     write_retrieved_log_X, confidence_intervals, \
+                     write_samples_file, write_summary_file
 from .core import make_atmosphere, compute_spectrum
 from .parameters import unpack_stellar_params
 from .stellar import precompute_stellar_spectra, stellar_contamination_general
@@ -44,10 +45,77 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
                   N_live = 400, ev_tol = 0.5, sampling_algorithm = 'MultiNest', 
                   resume = False, verbose = True, sampling_target = 'parameter',
                   chem_grid = 'fastchem', N_output_samples = 1000,
-                  save_ymodel = False,
+                  save_ymodel = False, sbi_round_sizes = (8000, 4000, 4000),
+                  sbi_training_batch_size = 256, sbi_posterior_samples = 20000,
+                  sbi_device = 'cpu', sbi_density_estimator = 'nsf',
+                  sbi_hidden_features = 128, sbi_num_transforms = 5,
+                  sbi_seed = 0,
                   ):
     '''
-    ADD DOCSTRING (will hopefully be done before the heat death of the Universe)
+    Run a POSEIDON atmospheric retrieval with either MultiNest or sbi-NPE.
+
+    For ``sampling_algorithm='MultiNest'``, this function runs nested sampling.
+    For ``sampling_algorithm in {'sbi','npe','snpe'}``, this function runs
+    sequential neural posterior estimation (SNPE / NPE-C) via ``sbi``.
+
+    Args:
+        planet, star, model, opac, data, priors:
+            Standard POSEIDON objects produced by ``core.py``.
+        wl (np.array):
+            Model wavelength grid (um).
+        P (np.array):
+            Atmospheric pressure grid (bar).
+        P_ref, R_p_ref:
+            Fixed reference pressure/radius needed when the complementary
+            quantity is retrieved.
+        P_param_set, He_fraction, N_slice_EM, N_slice_DN, constant_gravity:
+            Standard forward-model controls.
+        spectrum_type (str):
+            Spectrum mode. SBI currently supports 1D low-resolution
+            ``'transmission'`` retrievals only.
+        N_live (int):
+            Number of MultiNest live points.
+        ev_tol (float):
+            MultiNest evidence tolerance.
+        sampling_algorithm (str):
+            ``'MultiNest'`` or SBI aliases ``'sbi'``, ``'npe'``, ``'snpe'``.
+        resume (bool):
+            Resume behavior for MultiNest run files.
+        sampling_target (str):
+            MultiNest sampling efficiency target.
+        N_output_samples (int):
+            Number of posterior samples used to generate saved confidence
+            intervals for spectra/PT/chemistry.
+        save_ymodel (bool):
+            If ``True``, save sampled binned observables.
+
+        sbi_round_sizes (tuple[int]):
+            Number of simulations in each SBI round, e.g. ``(8000, 4000, 4000)``.
+            This is the primary SBI runtime knob and is the closest analogue to
+            MultiNest ``N_live`` (not one-to-one). Higher totals improve
+            posterior quality but increase wall time.
+        sbi_training_batch_size (int):
+            Mini-batch size for neural density-estimator training in each round.
+            Larger values can speed up training on GPU if memory allows.
+        sbi_posterior_samples (int):
+            Number of posterior draws taken from the trained SBI posterior for
+            downstream POSEIDON outputs.
+        sbi_device (str):
+            PyTorch device string (e.g. ``'cpu'``, ``'cuda'``, ``'cuda:0'``).
+        sbi_density_estimator (str):
+            Estimator family passed to ``sbi.neural_nets.posterior_nn``.
+            Typical options: ``'nsf'``, ``'maf'``, ``'mdn'``, ``'made'``.
+        sbi_hidden_features (int):
+            Hidden width for the SBI density-estimator network.
+        sbi_num_transforms (int):
+            Number of flow transforms for flow-based estimators (e.g. ``nsf``/``maf``).
+        sbi_seed (int):
+            Random seed for torch used by SBI training/sampling.
+
+    Notes:
+        There is no strict conversion between MultiNest ``N_live`` and SBI
+        simulation counts. For benchmarking, compare both wall time and posterior
+        stability using fixed priors/model/data.
     '''
 
     # Unpack planet name
@@ -143,6 +211,8 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
     if rank == 0:
         print("POSEIDON now running '" + retrieval_name + "'")
 
+    cwd_start = os.getcwd()
+
     # Run POSEIDON retrieval using PyMultiNest
     if (sampling_algorithm == 'MultiNest'):
 
@@ -230,10 +300,88 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
 
             print("All done! Output files can be found in " + output_dir + "results/")
 
+    elif (sampling_algorithm.lower() in ['sbi', 'npe', 'snpe']):
+
+        if (model['Atmosphere_dimension'] != 1):
+            raise Exception("Error: SBI retrieval currently supports only 1D models.")
+        if ('transmission' not in spectrum_type):
+            raise Exception("Error: SBI retrieval currently supports only transmission spectra.")
+        if (model['high_res_method'] is not None):
+            raise Exception("Error: SBI retrieval currently supports low-resolution retrievals only.")
+
+        if (rank == 0):
+            t0 = time.perf_counter()
+
+            posterior, posterior_samples = SBI_NPE_retrieval(
+                planet, star, model, opac, data, prior_types, prior_ranges,
+                spectrum_type, wl, P, P_ref, R_p_ref, P_param_set, He_fraction,
+                N_slice_EM, N_slice_DN, T_phot_grid, T_het_grid, log_g_phot_grid,
+                log_g_het_grid, I_phot_grid, I_het_grid, y_p, F_s_obs,
+                constant_gravity, chemistry_grid, sbi_round_sizes,
+                sbi_training_batch_size, sbi_posterior_samples, sbi_device,
+                sbi_density_estimator, sbi_hidden_features, sbi_num_transforms,
+                sbi_seed,
+            )
+
+            T_low2, T_low1, T_median, \
+            T_high1, T_high2, \
+            log_X_low2, log_X_low1, \
+            log_X_median, log_X_high1, \
+            log_X_high2, \
+            spec_low2, spec_low1, \
+            spec_median, spec_high1, \
+            spec_high2, T_best, \
+            spectrum_best, ymodel_best, \
+            ymodel_samples = retrieved_samples_from_posterior(
+                posterior_samples, planet, star, model, opac, data, wl, P, P_ref,
+                R_p_ref, P_param_set, He_fraction, N_slice_EM, N_slice_DN,
+                spectrum_type, T_phot_grid, T_het_grid, log_g_phot_grid,
+                log_g_het_grid, I_phot_grid, I_het_grid, y_p, F_s_obs,
+                constant_gravity, chemistry_grid, N_output_samples
+            )
+
+            os.makedirs(output_dir + 'SBI_raw/', exist_ok=True)
+            os.chdir(output_dir + 'SBI_raw/')
+            np.save(retrieval_name + '_samples.npy', posterior_samples)
+            try:
+                import torch
+                torch.save(posterior, retrieval_name + '_posterior.pt')
+            except Exception:
+                pass
+            os.chdir('../MultiNest_raw/')
+
+            write_SBI_results(planet, model, data, retrieval_name, sbi_round_sizes,
+                              sampling_algorithm, wl, R,
+                              posterior_samples, ymodel_best, spectrum_type)
+
+            write_retrieved_spectrum(retrieval_name, wl, spec_low2, spec_low1,
+                                     spec_median, spec_high1, spec_high2)
+
+            if (save_ymodel == True):
+                ymodel_samples_object = np.array(ymodel_samples).T
+                np.savetxt('../samples/' + retrieval_name + '_ymodel_samples.txt',
+                           ymodel_samples_object.T)
+
+            if (disable_atmosphere == False):
+                write_retrieved_PT(retrieval_name, P, T_low2, T_low1, T_median,
+                                   T_high1, T_high2)
+                write_retrieved_log_X(retrieval_name, chemical_species, P,
+                                      log_X_low2, log_X_low1, log_X_median,
+                                      log_X_high1, log_X_high2)
+
+            t1 = time.perf_counter()
+            total = round_sig_figs((t1-t0)/3600.0, 2)
+            print('POSEIDON SBI retrieval finished in ' + str(total) + ' hours')
+            print("All done! Output files can be found in " + output_dir + "results/")
+
+    else:
+        raise Exception("Error: unsupported sampling algorithm '" +
+                        str(sampling_algorithm) + "'.")
+
     comm.Barrier()
 
     # Change directory back to directory where user's python script is located
-    os.chdir('../../../../')
+    os.chdir(cwd_start)
 
 
 def forward_model(param_vector, planet, star, model, opac, data, wl, P, P_ref_set,
@@ -589,6 +737,229 @@ def CLR_Prior(chem_params_drawn, limit = -12.0):
         return (np.ones(n+1)*(-50.0))    # Fails check -> return dummy array of log values
 
 
+def transform_prior_unit_cube(cube, model, prior_types, prior_ranges):
+    '''
+    Transform a unit-cube sample into POSEIDON retrieval parameters using the
+    same prior semantics as the MultiNest retrieval path.
+    '''
+
+    param_names = model['param_names']
+    param_species = model['param_species']
+    X_params = model['X_param_names']
+    cloud_param_names = model['cloud_param_names']
+    N_params_cum = model['N_params_cum']
+    Atmosphere_dimension = model['Atmosphere_dimension']
+    species_EM_gradient = model['species_EM_gradient']
+    species_DN_gradient = model['species_DN_gradient']
+
+    N_species_params = len(X_params)
+    cube = np.array(cube, dtype=np.float64, copy=True)
+    simplex_allowed = 1
+
+    for i, parameter in enumerate(param_names):
+
+        if (parameter not in X_params) or (parameter in ['C_to_O', 'log_Met']):
+
+            if (prior_types[parameter] == 'uniform'):
+                min_value = prior_ranges[parameter][0]
+                max_value = prior_ranges[parameter][1]
+                cube[i] = ((cube[i] * (max_value - min_value)) + min_value)
+
+            elif (prior_types[parameter] == 'gaussian'):
+                mean = prior_ranges[parameter][0]
+                std = prior_ranges[parameter][1]
+                cube[i] = mean + (std * ndtri(cube[i]))
+
+            elif (prior_types[parameter] == 'sine'):
+                max_value = prior_ranges[parameter][1]
+                if parameter in ['alpha', 'beta']:
+                    cube[i] = (180.0/np.pi)*2.0*np.arcsin(
+                        cube[i] * np.sin((np.pi/180.0)*(max_value/2.0))
+                    )
+                elif parameter in ['theta_0']:
+                    cube[i] = (180.0/np.pi)*np.arcsin(
+                        (2.0*cube[i] - 1) * np.sin((np.pi/180.0)*(max_value/2.0))
+                    )
+
+        elif ((parameter in X_params) and (prior_types[parameter] == 'uniform')):
+
+            for species_q in param_species:
+                phrase = '_' + species_q
+                if ((phrase + '_' in parameter) or (parameter[-len(phrase):] == phrase)):
+                    species = species_q
+
+            if (Atmosphere_dimension == 1):
+                min_value = prior_ranges[parameter][0]
+                max_value = prior_ranges[parameter][1]
+                cube[i] = ((cube[i] * (max_value - min_value)) + min_value)
+
+            elif (Atmosphere_dimension == 2):
+                if ('Delta' not in parameter):
+                    min_value = prior_ranges[parameter][0]
+                    max_value = prior_ranges[parameter][1]
+                    last_value = ((cube[i] * (max_value - min_value)) + min_value)
+                    cube[i] = last_value
+                    prev_parameter = parameter
+                elif ('Delta' in parameter):
+                    min_prior_abs = prior_ranges[prev_parameter][0]
+                    max_prior_abs = prior_ranges[prev_parameter][1]
+                    min_prior_delta = prior_ranges[parameter][0]
+                    max_prior_delta = prior_ranges[parameter][1]
+                    sampled_abundance = last_value
+                    largest_delta = 2*min((sampled_abundance - min_prior_abs),
+                                          (max_prior_abs - sampled_abundance))
+                    max_value_delta = min(max_prior_delta, largest_delta)
+                    min_value_delta = max(min_prior_delta, -largest_delta)
+                    cube[i] = ((cube[i] * (max_value_delta - min_value_delta)) + min_value_delta)
+
+            elif (Atmosphere_dimension == 3):
+                if ((species in species_EM_gradient) and (species in species_DN_gradient)):
+                    if ('Delta' not in parameter):
+                        min_value = prior_ranges[parameter][0]
+                        max_value = prior_ranges[parameter][1]
+                        cube[i] = ((cube[i] * (max_value - min_value)) + min_value)
+                        prev_parameter = parameter
+                    elif (parameter == ('Delta_log_' + species + '_term')):
+                        min_prior_abs = prior_ranges[prev_parameter][0]
+                        max_prior_abs = prior_ranges[prev_parameter][1]
+                        min_prior_delta = prior_ranges[parameter][0]
+                        max_prior_delta = prior_ranges[parameter][1]
+                        sampled_abundance = cube[i-1]
+                        largest_delta = 2*min((sampled_abundance - min_prior_abs),
+                                              (max_prior_abs - sampled_abundance))
+                        max_value_delta = min(max_prior_delta, largest_delta)
+                        min_value_delta = max(min_prior_delta, -largest_delta)
+                        cube[i] = ((cube[i] * (max_value_delta - min_value_delta)) + min_value_delta)
+                        prev_prev_parameter = prev_parameter
+                        prev_parameter = parameter
+                    elif (parameter == ('Delta_log_' + species + '_DN')):
+                        min_prior_abs = prior_ranges[prev_prev_parameter][0]
+                        max_prior_abs = prior_ranges[prev_prev_parameter][1]
+                        min_prior_delta_DN = prior_ranges[parameter][0]
+                        max_prior_delta_DN = prior_ranges[parameter][1]
+                        max_term_abundance = cube[i-2] + abs(cube[i-1]/2.0)
+                        min_term_abundance = cube[i-2] - abs(cube[i-1]/2.0)
+                        largest_delta = 2*min((min_term_abundance - min_prior_abs),
+                                              (max_prior_abs - max_term_abundance))
+                        max_value_delta_DN = min(max_prior_delta_DN, largest_delta)
+                        min_value_delta_DN = max(min_prior_delta_DN, -largest_delta)
+                        cube[i] = ((cube[i] * (max_value_delta_DN - min_value_delta_DN)) + min_value_delta_DN)
+                else:
+                    if ('Delta' not in parameter):
+                        min_value = prior_ranges[parameter][0]
+                        max_value = prior_ranges[parameter][1]
+                        last_value = ((cube[i] * (max_value - min_value)) + min_value)
+                        cube[i] = last_value
+                        prev_parameter = parameter
+                    elif ('Delta' in parameter):
+                        min_prior_abs = prior_ranges[prev_parameter][0]
+                        max_prior_abs = prior_ranges[prev_parameter][1]
+                        min_prior_delta = prior_ranges[parameter][0]
+                        max_prior_delta = prior_ranges[parameter][1]
+                        sampled_abundance = last_value
+                        largest_delta = 2*min((sampled_abundance - min_prior_abs),
+                                              (max_prior_abs - sampled_abundance))
+                        max_value_delta = min(max_prior_delta, largest_delta)
+                        min_value_delta = max(min_prior_delta, -largest_delta)
+                        cube[i] = ((cube[i] * (max_value_delta - min_value_delta)) + min_value_delta)
+
+    if ('CLR' in prior_types.values()):
+        chem_drawn = np.array(cube[N_params_cum[1]:N_params_cum[2]])
+        limit = prior_ranges[X_params[0]][0]
+        log_X = CLR_Prior(chem_drawn, limit)
+        if (log_X[1] == -50.0):
+            simplex_allowed = 0
+        for i in range(N_species_params):
+            i_prime = N_params_cum[1] + i
+            cube[i_prime] = log_X[(1+i)]
+
+    if any('f_both' in s for s in cloud_param_names):
+        cloud_drawn = np.array(cube[N_params_cum[2]:N_params_cum[3]])
+        f_both = cloud_drawn[np.where(np.char.find(cloud_param_names, 'f_both') != -1)[0]]
+        f_aerosol_1 = cloud_drawn[np.where(np.char.find(cloud_param_names, 'f_aerosol_1') != -1)[0]]
+        f_aerosol_2 = cloud_drawn[np.where(np.char.find(cloud_param_names, 'f_aerosol_2') != -1)[0]]
+        f_clear = cloud_drawn[np.where(np.char.find(cloud_param_names, 'f_clear') != -1)[0]]
+        sum_to_normalize_to = f_both + f_aerosol_1 + f_aerosol_2 + f_clear
+        f_both = f_both/(sum_to_normalize_to)
+        f_aerosol_1 = f_aerosol_1/(sum_to_normalize_to)
+        f_aerosol_2 = f_aerosol_2/(sum_to_normalize_to)
+        f_clear = f_clear/(sum_to_normalize_to)
+        cube[N_params_cum[2] + np.where(np.char.find(cloud_param_names, 'f_both') != -1)[0][0]] = f_both
+        cube[N_params_cum[2] + np.where(np.char.find(cloud_param_names, 'f_aerosol_1') != -1)[0][0]] = f_aerosol_1
+        cube[N_params_cum[2] + np.where(np.char.find(cloud_param_names, 'f_aerosol_2') != -1)[0][0]] = f_aerosol_2
+        cube[N_params_cum[2] + np.where(np.char.find(cloud_param_names, 'f_clear') != -1)[0][0]] = f_clear
+
+    return cube, simplex_allowed
+
+
+def compute_effective_error_sq(err_data, error_inflation, err_inflation_params, ymodel):
+    '''
+    Compute effective variance for retrieval models with optional error inflation.
+    '''
+
+    if (error_inflation == None):
+        err_eff_sq = err_data * err_data
+    elif (error_inflation == 'Line15'):
+        err_eff_sq = (err_data*err_data + np.power(10.0, err_inflation_params[0]))
+    elif (error_inflation == 'Piette20'):
+        err_eff_sq = (err_data*err_data + (err_inflation_params[0]*ymodel)**2)
+    elif (('Line15' in error_inflation) and ('Piette20' in error_inflation)):
+        err_eff_sq = (err_data*err_data + np.power(10.0, err_inflation_params[0]) +
+                      ((err_inflation_params[1]*ymodel)**2))
+    else:
+        err_eff_sq = err_data * err_data
+
+    return err_eff_sq
+
+
+def apply_dataset_offsets(y_vals, offset_params, data, offsets_applied):
+    '''
+    Apply dataset offsets to modelled observables (offset parameters are in ppm).
+    '''
+
+    y_offset = y_vals.copy()
+    offset_start = data['offset_start']
+    offset_end = data['offset_end']
+    offset_1_start = data['offset_1_start']
+    offset_1_end = data['offset_1_end']
+    offset_2_start = data['offset_2_start']
+    offset_2_end = data['offset_2_end']
+    offset_3_start = data['offset_3_start']
+    offset_3_end = data['offset_3_end']
+
+    if (offsets_applied == 'single_dataset'):
+        if offset_1_start == 0:
+            y_offset[offset_start:offset_end] += offset_params[0]*1e-6
+        else:
+            for n in range(len(offset_1_start)):
+                y_offset[offset_1_start[n]:offset_1_end[n]] += offset_params[0]*1e-6
+
+    elif (offsets_applied == 'two_datasets'):
+        if offset_1_start == 0:
+            y_offset[offset_start[0]:offset_end[0]] += offset_params[0]*1e-6
+            y_offset[offset_start[1]:offset_end[1]] += offset_params[1]*1e-6
+        else:
+            for n in range(len(offset_1_start)):
+                y_offset[offset_1_start[n]:offset_1_end[n]] += offset_params[0]*1e-6
+            for m in range(len(offset_2_start)):
+                y_offset[offset_2_start[m]:offset_2_end[m]] += offset_params[1]*1e-6
+
+    elif (offsets_applied == 'three_datasets'):
+        if offset_1_start == 0:
+            y_offset[offset_start[0]:offset_end[0]] += offset_params[0]*1e-6
+            y_offset[offset_start[1]:offset_end[1]] += offset_params[1]*1e-6
+            y_offset[offset_start[2]:offset_end[2]] += offset_params[2]*1e-6
+        else:
+            for n in range(len(offset_1_start)):
+                y_offset[offset_1_start[n]:offset_1_end[n]] += offset_params[0]*1e-6
+            for m in range(len(offset_2_start)):
+                y_offset[offset_2_start[m]:offset_2_end[m]] += offset_params[1]*1e-6
+            for s in range(len(offset_3_start)):
+                y_offset[offset_3_start[s]:offset_3_end[s]] += offset_params[2]*1e-6
+
+    return y_offset
+
+
 def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types, 
                           prior_ranges, spectrum_type, wl, P, P_ref_set, 
                           R_p_ref_set, P_param_set, He_fraction, N_slice_EM, 
@@ -646,265 +1017,19 @@ def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types,
         
         '''
 
-        # Assign prior distribution to each free parameter
-        for i, parameter in enumerate(param_names):
+        transformed_cube, simplex_allowed = transform_prior_unit_cube(
+            cube, model, prior_types, prior_ranges
+        )
+        for i in range(len(transformed_cube)):
+            cube[i] = transformed_cube[i]
+
+        global allowed_simplex
+        allowed_simplex = simplex_allowed
+        return
+
+        # All prior transformation logic is shared with the SBI path through
+        # transform_prior_unit_cube().
 
-            # First deal with all parameters besides mixing ratios 
-            if (parameter not in X_params) or (parameter in ['C_to_O', 'log_Met']):
-
-                # Uniform priors
-                if (prior_types[parameter] == 'uniform'):
-
-                    min_value = prior_ranges[parameter][0]
-                    max_value = prior_ranges[parameter][1]
-
-                    cube[i] = ((cube[i] * (max_value - min_value)) + min_value)
-
-                # Gaussian priors
-                elif (prior_types[parameter] == 'gaussian'):
-
-                    mean = prior_ranges[parameter][0]
-                    std = prior_ranges[parameter][1]
-
-                    cube[i] = mean + (std * ndtri(cube[i]))
-
-                # Sine priors
-                elif (prior_types[parameter] == 'sine'):
-
-                    max_value = prior_ranges[parameter][1]
-
-                    if parameter in ['alpha', 'beta']:
-                        cube[i] = (180.0/np.pi)*2.0*np.arcsin(cube[i] * np.sin((np.pi/180.0)*(max_value/2.0)))
-
-                    elif parameter in ['theta_0']:
-                        cube[i] = (180.0/np.pi)*np.arcsin((2.0*cube[i] - 1) * np.sin((np.pi/180.0)*(max_value/2.0)))
-
-            # Draw mixing ratio parameters with uniform priors
-            elif ((parameter in X_params) and (prior_types[parameter] == 'uniform')):
-
-                # Find which chemical species this parameter represents
-                for species_q in param_species:
-                    phrase = '_' + species_q
-                    if ((phrase + '_' in parameter) or (parameter[-len(phrase):] == phrase)):
-                        species = species_q
-
-                # For 1D models, prior just given by mixing ratio prior range
-                if (Atmosphere_dimension == 1):
-
-                    min_value = prior_ranges[parameter][0]
-                    max_value = prior_ranges[parameter][1]
-
-                    cube[i] = ((cube[i] * (max_value - min_value)) + min_value)
-
-                # For 2D models, the prior range for 'Delta' parameters can change to satisfy mixing ratio priors
-                elif (Atmosphere_dimension == 2):
-
-                    # Absolute mixing ratio parameter comes first
-                    if ('Delta' not in parameter):
-
-                        min_value = prior_ranges[parameter][0]
-                        max_value = prior_ranges[parameter][1]
-
-                        last_value = ((cube[i] * (max_value - min_value)) + min_value)
-
-                        cube[i] = last_value
-
-                        # Store name of previous parameter for delta prior
-                        prev_parameter = parameter
-                
-                    # Mixing ratio gradient parameter comes second
-                    elif ('Delta' in parameter):
-
-                        # Mixing ratio gradient parameters dynamically update allowed range
-                        min_prior_abs = prior_ranges[prev_parameter][0]
-                        max_prior_abs = prior_ranges[prev_parameter][1]
-
-                        min_prior_delta = prior_ranges[parameter][0]
-                        max_prior_delta = prior_ranges[parameter][1]
-
-                        # Load chosen abundance from previous parameter
-                        sampled_abundance = last_value
-
-                        # Find largest gradient such that the abundances in all
-                        # atmospheric regions satisfy the absolute abundance constraint
-                        largest_delta = 2*min((sampled_abundance - min_prior_abs), 
-                                              (max_prior_abs - sampled_abundance))   # This is |Delta|_max
-
-                        # Max / min values governed by the most restrictive of
-                        # delta prior or absolute prior, such that both are satisfied
-                        max_value_delta = min(max_prior_delta, largest_delta)
-                        min_value_delta = max(min_prior_delta, -largest_delta)
-                        
-                        cube[i] = ((cube[i] * (max_value_delta - min_value_delta)) + min_value_delta)
-                    
-                # For 3D models, the prior ranges for 'Delta' parameters can change to satisfy mixing ratio priors
-                elif (Atmosphere_dimension == 3):
-                        
-                    # For species with 3D gradients, sample such that highest and lowest values still satisfy mixing ratio prior
-                    if ((species in species_EM_gradient) and (species in species_DN_gradient)):
-
-                        # Absolute mixing ratio parameter comes first
-                        if ('Delta' not in parameter):
-
-                            min_value = prior_ranges[parameter][0]
-                            max_value = prior_ranges[parameter][1]
-
-                            cube[i] = ((cube[i] * (max_value - min_value)) + min_value)
-
-                            # Store name of previous parameter for next delta prior
-                            prev_parameter = parameter
-                        
-                        # Terminator mixing ratio gradient parameter comes second
-                        elif (parameter == ('Delta_log_' + species + '_term')):
-
-                            # Mixing ratio gradient parameters dynamically update allowed range
-                            min_prior_abs = prior_ranges[prev_parameter][0]
-                            max_prior_abs = prior_ranges[prev_parameter][1]
-
-                            min_prior_delta = prior_ranges[parameter][0]
-                            max_prior_delta = prior_ranges[parameter][1]
-
-                            # Load chosen abundance from previous parameter
-                            sampled_abundance = cube[i-1]
-
-                            # Find largest gradient such that the abundances in all
-                            # atmospheric regions satisfy the absolute abundance constraint
-                            largest_delta = 2*min((sampled_abundance - min_prior_abs), 
-                                                  (max_prior_abs - sampled_abundance))   # This is |Delta|_max
-
-                            # Max / min values governed by the most restrictive of
-                            # delta prior or absolute prior, such that both are satisfied
-                            max_value_delta = min(max_prior_delta, largest_delta)
-                            min_value_delta = max(min_prior_delta, -largest_delta)
-
-                            cube[i] = ((cube[i] * (max_value_delta - min_value_delta)) + min_value_delta)
-
-                            # Store name of previous parameters for next delta prior
-                            prev_prev_parameter = prev_parameter
-                            prev_parameter = parameter
-
-                        # Day-night mixing ratio gradient parameter comes third
-                        elif (parameter == ('Delta_log_' + species + '_DN')):
-
-                            # Mixing ratio gradient parameters dynamically update allowed range
-                            min_prior_abs = prior_ranges[prev_prev_parameter][0]
-                            max_prior_abs = prior_ranges[prev_prev_parameter][1]
-
-                            min_prior_delta_DN = prior_ranges[parameter][0]
-                            max_prior_delta_DN = prior_ranges[parameter][1]
-
-                            # Find minimum and maximum mixing ratio in terminator plane (i.e. evening/morning)
-                            max_term_abundance = cube[i-2] + abs(cube[i-1]/2.0)  # log_X_term_bar + |delta_log_X_term|/2
-                            min_term_abundance = cube[i-2] - abs(cube[i-1]/2.0)  # log_X_term_bar - |delta_log_X_term|/2
-
-                            # Find largest gradient such that the abundances in all
-                            # atmospheric regions satisfy the absolute abundance constraint
-                            largest_delta = 2*min((min_term_abundance - min_prior_abs), 
-                                                    (max_prior_abs - max_term_abundance))   # This is |Delta|_max
-
-                            # Max / min values governed by the most restrictive of
-                            # delta priors or absolute prior, such that both are satisfied
-                            max_value_delta_DN = min(max_prior_delta_DN, largest_delta)
-                            min_value_delta_DN = max(min_prior_delta_DN, -largest_delta)
-
-                            cube[i] = ((cube[i] * (max_value_delta_DN - min_value_delta_DN)) + min_value_delta_DN)
-
-                    # Species with a 2D gradient (or no gradient) within a 3D model reduces to the 2D case above
-                    else:
-
-                        # Absolute mixing ratio parameter comes first
-                        if ('Delta' not in parameter):
-
-                            min_value = prior_ranges[parameter][0]
-                            max_value = prior_ranges[parameter][1]
-
-                            last_value = ((cube[i] * (max_value - min_value)) + min_value)
-
-                            cube[i] = last_value
-
-                            # Store name of previous parameter for delta prior
-                            prev_parameter = parameter
-                    
-                        # Mixing ratio gradient parameter comes second
-                        elif ('Delta' in parameter):
-
-                            # Mixing ratio gradient parameters dynamically update allowed range
-                            min_prior_abs = prior_ranges[prev_parameter][0]
-                            max_prior_abs = prior_ranges[prev_parameter][1]
-
-                            min_prior_delta = prior_ranges[parameter][0]
-                            max_prior_delta = prior_ranges[parameter][1]
-
-                            # Load chosen abundance from previous parameter
-                            sampled_abundance = last_value
-
-                            # Find largest gradient such that the abundances in all
-                            # atmospheric regions satisfy the absolute abundance constraint
-                            largest_delta = 2*min((sampled_abundance - min_prior_abs), 
-                                                  (max_prior_abs - sampled_abundance))   # This is |Delta|_max
-
-                            # Max / min values governed by the most restrictive of
-                            # delta prior or absolute prior, such that both are satisfied
-                            max_value_delta = min(max_prior_delta, largest_delta)
-                            min_value_delta = max(min_prior_delta, -largest_delta)
-                            
-                            cube[i] = ((cube[i] * (max_value_delta - min_value_delta)) + min_value_delta)
-                    
-        # If mixing ratio parameters have centred-log ratio prior, treat separately 
-        if ('CLR' in prior_types.values()):
-
-            # Random numbers from 0 to 1 corresponding to mixing ratio parameters
-            chem_drawn = np.array(cube[N_params_cum[1]:N_params_cum[2]])
-
-            # Load Lower limit on log mixing ratios specified by user
-            limit = prior_ranges[X_params[0]][0]   # Same for all CLR variables, so choose first one
-
-            # Map random numbers to CLR variables, than transform to mixing ratios
-            log_X = CLR_Prior(chem_drawn, limit)
-            
-            # Check if this random parameter draw lies in the allowed simplex space (X_i > 10^-12 and sum to 1)
-            global allowed_simplex     # Needs a global, as prior function has no return
-
-            if (log_X[1] == -50.0): 
-                allowed_simplex = 0       # Mixing ratios outside allowed simplex space -> model rejected by likelihood
-            elif (log_X[1] != -50.0): 
-                allowed_simplex = 1       # Likelihood will be computed for this parameter combination
-                
-            # Pass the mixing ratios corresponding to the sampled CLR variables to MultiNest
-            for i in range(N_species_params):
-                
-                i_prime = N_params_cum[1] + i
-                
-                cube[i_prime] = log_X[(1+i)]   # log_X[0] is not a free parameter
-
-        # If there are patchy multiple clouds (f_both, f_aerosol_1, and f_aerosol_2)
-        # The parameters need to be normalized to 1 in the cube
-        # This step also occurs in core.py in compute_spectrum()
-        if any('f_both' in s for s in cloud_param_names):
-
-            # cube is not an array, and has to be turned into an array for the next line
-            # here we are drawing the drawn parameters that correspond to cloud params
-            cloud_drawn = np.array(cube[N_params_cum[2]:N_params_cum[3]])
-
-            f_both = cloud_drawn[np.where(np.char.find(cloud_param_names,'f_both')!= -1)[0]]
-            f_aerosol_1 = cloud_drawn[np.where(np.char.find(cloud_param_names,'f_aerosol_1')!= -1)[0]]
-            f_aerosol_2 = cloud_drawn[np.where(np.char.find(cloud_param_names,'f_aerosol_2')!= -1)[0]]
-            f_clear = cloud_drawn[np.where(np.char.find(cloud_param_names,'f_clear')!= -1)[0]]
-
-            sum_to_normalize_to = f_both + f_aerosol_1 + f_aerosol_2 + f_clear
-            f_both = f_both/(sum_to_normalize_to)
-            f_aerosol_1 = f_aerosol_1/(sum_to_normalize_to)
-            f_aerosol_2 = f_aerosol_2/(sum_to_normalize_to)
-            f_clear = f_clear/(sum_to_normalize_to)
-
-            # Replace f values with new normalized ones
-            # np.where returns a 2d array of indices which is why you have to take two [0] [0]
-            cube[N_params_cum[2]+np.where(np.char.find(cloud_param_names,'f_both')!= -1)[0][0]] = f_both
-            cube[N_params_cum[2]+np.where(np.char.find(cloud_param_names,'f_aerosol_1')!= -1)[0][0]] = f_aerosol_1
-            cube[N_params_cum[2]+np.where(np.char.find(cloud_param_names,'f_aerosol_2')!= -1)[0][0]] = f_aerosol_2
-            cube[N_params_cum[2]+np.where(np.char.find(cloud_param_names,'f_clear')!= -1)[0][0]] = f_clear
-      
-            
     # Define the log-likelihood function
     def LogLikelihood(cube, ndim, nparams):
         ''' 
@@ -987,20 +1112,12 @@ def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types,
         err_data = data['err_data']
         
         # Compute effective error, if unknown systematics included
+        err_eff_sq = compute_effective_error_sq(err_data, error_inflation,
+                                                err_inflation_params, ymodel)
         if (error_inflation == None):
-            err_eff_sq = err_data*err_data
             norm_log = norm_log_default
         else:
-            if (error_inflation == 'Line15'):
-                err_eff_sq = (err_data*err_data + np.power(10.0, err_inflation_params[0]))
-                norm_log = (-0.5*np.log(2.0*np.pi*err_eff_sq)).sum()
-            elif (error_inflation == 'Piette20'):
-                err_eff_sq = (err_data*err_data + (err_inflation_params[0]*ymodel)**2)
-                norm_log = (-0.5*np.log(2.0*np.pi*err_eff_sq)).sum()
-            elif (('Line15' in error_inflation) and ('Piette20' in error_inflation)):
-                err_eff_sq = (err_data*err_data + np.power(10.0, err_inflation_params[0]) + 
-                            ((err_inflation_params[1]*ymodel)**2))
-                norm_log = (-0.5*np.log(2.0*np.pi*err_eff_sq)).sum()
+            norm_log = (-0.5*np.log(2.0*np.pi*err_eff_sq)).sum()
 
         # Load transit depth data points and indices of any offset ranges
         ydata = data['ydata']
@@ -1078,6 +1195,480 @@ def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types,
     
     # Run PyMultiNest
     pymultinest.run(LogLikelihood, Prior, n_dims, **kwargs)
+
+
+def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges,
+                      spectrum_type, wl, P, P_ref_set, R_p_ref_set, P_param_set,
+                      He_fraction, N_slice_EM, N_slice_DN, T_phot_grid, T_het_grid,
+                      log_g_phot_grid, log_g_het_grid, I_phot_grid, I_het_grid,
+                      y_p, F_s_obs, constant_gravity, chemistry_grid,
+                      sbi_round_sizes, sbi_training_batch_size,
+                      sbi_posterior_samples, sbi_device, sbi_density_estimator,
+                      sbi_hidden_features, sbi_num_transforms, sbi_seed):
+    '''
+    Conduct an SNPE/NPE retrieval using the sbi package on the POSEIDON forward
+    model.
+    '''
+
+    import torch
+    from sbi.inference import SNPE
+    from sbi.neural_nets import posterior_nn
+    from sbi.utils import BoxUniform
+
+    param_names = model['param_names']
+    N_params = len(param_names)
+    N_params_cum = model['N_params_cum']
+    error_inflation = model['error_inflation']
+    offsets_applied = model['offsets_applied']
+    stellar_contam = model['stellar_contam']
+
+    x_obs = torch.as_tensor(data['ydata'], dtype=torch.float32, device=sbi_device)
+    err_data = data['err_data']
+
+    if (len(sbi_round_sizes) == 0):
+        raise Exception("Error: sbi_round_sizes must include at least one round.")
+
+    torch.manual_seed(int(sbi_seed))
+    low = torch.zeros(N_params, dtype=torch.float32, device=sbi_device)
+    high = torch.ones(N_params, dtype=torch.float32, device=sbi_device)
+    prior_z = BoxUniform(low=low, high=high, device=sbi_device)
+
+    density_estimator = posterior_nn(
+        model=sbi_density_estimator,
+        hidden_features=sbi_hidden_features,
+        num_transforms=sbi_num_transforms,
+    )
+    inference = SNPE(
+        prior=prior_z,
+        density_estimator=density_estimator,
+        device=sbi_device,
+        show_progress_bars=True
+    )
+
+    round_invalid_reasons = {'clr_simplex': 0, 'stellar': 0, 'forward_model_nan': 0}
+
+    def simulator(z):
+        nonlocal round_invalid_reasons
+        z = torch.atleast_2d(z)
+        x_out = []
+        nan_vec = np.full(len(data['ydata']), np.nan, dtype=np.float32)
+
+        for z_i in z:
+            cube = z_i.detach().cpu().numpy()
+            param_vector, simplex_allowed = transform_prior_unit_cube(
+                cube, model, prior_types, prior_ranges
+            )
+
+            if (simplex_allowed == 0):
+                round_invalid_reasons['clr_simplex'] += 1
+                x_out.append(torch.as_tensor(nan_vec, dtype=torch.float32, device=sbi_device))
+                continue
+
+            if ((stellar_contam != None) and ('two_spots' in stellar_contam)):
+                _, _, _, _, _, stellar_params, _, _, _ = split_params(param_vector, N_params_cum)
+                _, _, _, _, T_spot, T_fac, T_phot, _, _, _, _ = unpack_stellar_params(
+                    param_names, star, stellar_params, stellar_contam, N_params_cum
+                )
+                if ((T_spot > T_phot) or (T_fac < T_phot) or (T_spot > T_fac)):
+                    round_invalid_reasons['stellar'] += 1
+                    x_out.append(torch.as_tensor(nan_vec, dtype=torch.float32, device=sbi_device))
+                    continue
+
+            ymodel, spectrum, _, _ = forward_model(
+                param_vector, planet, star, model, opac, data, wl, P, P_ref_set,
+                R_p_ref_set, P_param_set, He_fraction, N_slice_EM, N_slice_DN,
+                spectrum_type, T_phot_grid, T_het_grid, log_g_phot_grid,
+                log_g_het_grid, I_phot_grid, I_het_grid, y_p, F_s_obs,
+                constant_gravity, chemistry_grid
+            )
+
+            if (np.any(np.isnan(spectrum)) or np.any(np.isnan(ymodel))):
+                round_invalid_reasons['forward_model_nan'] += 1
+                x_out.append(torch.as_tensor(nan_vec, dtype=torch.float32, device=sbi_device))
+                continue
+
+            _, _, _, _, _, _, offset_params, err_inflation_params, _ = split_params(
+                param_vector, N_params_cum
+            )
+            y_model_offset = apply_dataset_offsets(ymodel, offset_params, data, offsets_applied)
+            err_eff_sq = compute_effective_error_sq(
+                err_data, error_inflation, err_inflation_params, ymodel
+            )
+            y_sim = y_model_offset + np.random.normal(0.0, np.sqrt(err_eff_sq))
+
+            x_out.append(torch.as_tensor(y_sim, dtype=torch.float32, device=sbi_device))
+
+        x_tensor = torch.stack(x_out, dim=0)
+        return x_tensor.squeeze(0) if x_tensor.shape[0] == 1 else x_tensor
+
+    posterior = None
+    proposal = prior_z
+    for round_idx, n_sim in enumerate(sbi_round_sizes):
+        n_sim = int(n_sim)
+        if n_sim <= 0:
+            raise Exception("Error: each sbi round must have a positive number of simulations.")
+
+        print("Starting SNPE round " + str(round_idx + 1) + "/" +
+              str(len(sbi_round_sizes)) + " with " + str(n_sim) + " proposal draws.")
+
+        t_round_start = time.perf_counter()
+        t_prop_start = time.perf_counter()
+        if posterior is None:
+            z = prior_z.sample((n_sim,))
+        else:
+            z = posterior.sample((n_sim,), x=x_obs)
+        t_prop_end = time.perf_counter()
+
+        round_invalid_reasons = {'clr_simplex': 0, 'stellar': 0, 'forward_model_nan': 0}
+        t_sim_start = time.perf_counter()
+
+        x = simulator(z)
+        x_flat = x.reshape(x.shape[0], -1)
+        n_invalid = int((~torch.isfinite(x_flat).all(dim=1)).sum().item())
+        t_sim_end = time.perf_counter()
+
+        t_train_start = time.perf_counter()
+        density_estimator = inference.append_simulations(
+            z, x, proposal=proposal, exclude_invalid_x=True
+        ).train(training_batch_size=sbi_training_batch_size)
+        t_train_end = time.perf_counter()
+
+        posterior = inference.build_posterior(density_estimator)
+        proposal = posterior.set_default_x(x_obs)
+        t_round_end = time.perf_counter()
+        print("Finished SNPE round " + str(round_idx + 1) +
+              " with " + str(n_sim) + " simulations. " +
+              "Timings (s): propose=" + str(round(t_prop_end - t_prop_start, 2)) +
+              ", simulate=" + str(round(t_sim_end - t_sim_start, 2)) +
+              ", train=" + str(round(t_train_end - t_train_start, 2)) +
+              ", total=" + str(round(t_round_end - t_round_start, 2)) +
+              ". Invalid simulations in round = " + str(n_invalid) +
+              " (CLR=" + str(round_invalid_reasons['clr_simplex']) +
+              ", stellar=" + str(round_invalid_reasons['stellar']) +
+              ", forward_model_nan=" + str(round_invalid_reasons['forward_model_nan']) + ").")
+
+    with torch.no_grad():
+        z_post = posterior.sample((int(sbi_posterior_samples),), x=x_obs).cpu().numpy()
+
+    posterior_samples = []
+    for i in range(len(z_post)):
+        theta_i, simplex_allowed = transform_prior_unit_cube(
+            z_post[i, :], model, prior_types, prior_ranges
+        )
+        if (simplex_allowed == 1):
+            posterior_samples.append(theta_i)
+
+    if len(posterior_samples) == 0:
+        raise Exception("Error: no valid posterior samples were produced by SBI.")
+
+    posterior_samples = np.array(posterior_samples)
+
+    return posterior, posterior_samples
+
+
+def posterior_stats(samples):
+    '''
+    Compute a MultiNest-like marginals dictionary from posterior samples.
+    '''
+
+    sigma_levels = [1.0, 2.0, 3.0, 5.0]
+    marginals = []
+
+    for i in range(samples.shape[1]):
+        vals = samples[:, i]
+        marginal = {'median': np.median(vals)}
+        for s in sigma_levels:
+            low_q = 50.0 * (1.0 - np.math.erf(s / np.sqrt(2.0)))
+            high_q = 100.0 - low_q
+            interval = np.percentile(vals, [low_q, high_q])
+            marginal[str(int(s)) + 'sigma'] = interval
+            marginal[str(int(s)) + ' sigma'] = interval
+        marginals.append(marginal)
+
+    return {'marginals': marginals}
+
+
+def write_SBI_results(planet, model, data, retrieval_name, sbi_round_sizes,
+                      sampling_algorithm, wl, R,
+                      samples, ymodel_best, spectrum_type):
+    '''
+    Write SBI retrieval samples and summary in POSEIDON output directories.
+    '''
+
+    planet_name = planet['planet_name']
+    param_names = model['param_names']
+    n_params = len(param_names)
+    error_inflation = model['error_inflation']
+    offsets_applied = model['offsets_applied']
+    radius_unit = model['radius_unit']
+    N_params_cum = model['N_params_cum']
+
+    if model['high_res_method'] is None:
+        err_data = data['err_data']
+        ydata = data['ydata']
+        instruments = data['instruments']
+        datasets = data['datasets']
+    else:
+        err_data = None
+        ydata = None
+        instruments = None
+        datasets = None
+
+    best_fit_params = np.median(samples, axis=0)
+    stats = posterior_stats(samples)
+    ln_Z = np.nan
+    ln_Z_err = np.nan
+
+    if model['high_res_method'] is None:
+        _, _, _, _, _, _, offset_params, err_inflation_params, _ = split_params(
+            best_fit_params, N_params_cum
+        )
+        err_eff_sq = compute_effective_error_sq(
+            err_data, error_inflation, err_inflation_params, ymodel_best
+        )
+        y_model_offset = apply_dataset_offsets(ymodel_best, offset_params, data, offsets_applied)
+        best_chi_square = np.sum(((y_model_offset - ydata)**2) / err_eff_sq)
+        if ((len(ydata) - n_params) > 0):
+            dof = (len(ydata) - n_params)
+            reduced_chi_square = best_chi_square / dof
+        else:
+            dof = np.nan
+            reduced_chi_square = np.nan
+    else:
+        best_chi_square = np.nan
+        dof = np.nan
+        reduced_chi_square = np.nan
+
+    samples_prefix = '../samples/' + retrieval_name
+    results_prefix = '../results/' + retrieval_name
+
+    write_samples_file(samples, param_names, n_params, samples_prefix)
+    write_summary_file(results_prefix, planet_name, retrieval_name,
+                       sampling_algorithm + "_NPE", n_params,
+                       int(np.sum(np.array(sbi_round_sizes))),
+                       np.nan, param_names, stats,
+                       ln_Z, ln_Z_err, reduced_chi_square, best_chi_square,
+                       dof, best_fit_params, wl, R, instruments, datasets,
+                       radius_unit, spectrum_type)
+
+
+def postprocess_sbi_raw(planet, star, model, opac, data, wl, P, priors = None,
+                        P_ref = None, R_p_ref = None, P_param_set = 1.0e-2,
+                        R = None, retrieval_name = None, He_fraction = 0.17,
+                        N_slice_EM = 2, N_slice_DN = 4, constant_gravity = False,
+                        spectrum_type = 'transmission', y_p = np.array([0.0]),
+                        stellar_T_step = 20, stellar_log_g_step = 0.1,
+                        chem_grid = 'fastchem', N_output_samples = 1000,
+                        save_ymodel = False, sbi_round_sizes = (8000, 4000, 4000)):
+    '''
+    Re-process previously generated SBI raw samples into standard POSEIDON output
+    products (results/samples/PT/chemistry/spectrum) without re-running SBI
+    training/simulation rounds.
+
+    This function expects ``./POSEIDON_output/<planet>/retrievals/SBI_raw/
+    <retrieval_name>_samples.npy`` to exist.
+    '''
+
+    planet_name = planet['planet_name']
+    model_name = model['model_name']
+    retrieval_name = model_name if retrieval_name is None else (model_name + '_' + retrieval_name)
+    output_dir = './POSEIDON_output/' + planet_name + '/retrievals/'
+    cwd_start = os.getcwd()
+
+    param_species = model['param_species']
+    stellar_contam = model['stellar_contam']
+    X_profile = model['X_profile']
+    high_res_method = model['high_res_method']
+
+    if (model['Atmosphere_dimension'] != 1):
+        raise Exception("Error: SBI postprocessing currently supports only 1D models.")
+    if ('transmission' not in spectrum_type):
+        raise Exception("Error: SBI postprocessing currently supports transmission spectra.")
+    if (high_res_method is not None):
+        raise Exception("Error: SBI postprocessing currently supports low-resolution retrievals only.")
+
+    if X_profile == "chem_eq":
+        chemistry_grid = load_chemistry_grid(param_species, chem_grid, comm, rank)
+    else:
+        chemistry_grid = None
+
+    if (stellar_contam != None):
+        if (rank == 0):
+            print("Pre-computing stellar spectra before postprocessing SBI outputs...")
+        if (priors is None):
+            raise Exception("Error: priors must be provided for stellar-contaminated "
+                            "SBI postprocessing so stellar grids can be precomputed.")
+        prior_types = priors['prior_types']
+        prior_ranges = priors['prior_ranges']
+        T_phot_grid, T_het_grid, \
+        log_g_phot_grid, log_g_het_grid, \
+        I_phot_grid, I_het_grid = precompute_stellar_spectra(
+            comm, wl, star, prior_types, prior_ranges, stellar_contam,
+            stellar_T_step, stellar_log_g_step, star['stellar_interp_backend']
+        )
+    else:
+        T_phot_grid, T_het_grid = None, None
+        log_g_phot_grid, log_g_het_grid = None, None
+        I_phot_grid, I_het_grid = None, None
+
+    F_s_obs = None
+    if (('transmission' not in spectrum_type) and (star is not None)):
+        R_s = star['R_s']
+        F_s = star['F_star']
+        d = planet['system_distance']
+        if (d is None):
+            planet['system_distance'] = 1
+            d = planet['system_distance']
+        F_s_obs = (R_s / d)**2 * F_s
+
+    sample_file = output_dir + 'SBI_raw/' + retrieval_name + '_samples.npy'
+    if (os.path.exists(sample_file) == False):
+        raise Exception("Error: could not find SBI sample file: " + sample_file)
+
+    samples = np.load(sample_file)
+    if rank == 0:
+        print("Loaded " + str(len(samples)) + " SBI posterior samples from " + sample_file)
+
+    if rank == 0:
+        T_low2, T_low1, T_median, \
+        T_high1, T_high2, \
+        log_X_low2, log_X_low1, \
+        log_X_median, log_X_high1, \
+        log_X_high2, \
+        spec_low2, spec_low1, \
+        spec_median, spec_high1, \
+        spec_high2, _, \
+        _, ymodel_best, \
+        ymodel_samples = retrieved_samples_from_posterior(
+            samples, planet, star, model, opac, data, wl, P, P_ref, R_p_ref,
+            P_param_set, He_fraction, N_slice_EM, N_slice_DN, spectrum_type,
+            T_phot_grid, T_het_grid, log_g_phot_grid, log_g_het_grid,
+            I_phot_grid, I_het_grid, y_p, F_s_obs, constant_gravity,
+            chemistry_grid, N_output_samples
+        )
+
+        os.chdir(output_dir + 'MultiNest_raw/')
+        write_SBI_results(planet, model, data, retrieval_name, sbi_round_sizes,
+                          'sbi', wl, R, samples, ymodel_best, spectrum_type)
+
+        write_retrieved_spectrum(retrieval_name, wl, spec_low2, spec_low1,
+                                 spec_median, spec_high1, spec_high2)
+
+        if (save_ymodel == True):
+            ymodel_samples_object = np.array(ymodel_samples).T
+            np.savetxt('../samples/' + retrieval_name + '_ymodel_samples.txt',
+                       ymodel_samples_object.T)
+
+        if (model['disable_atmosphere'] == False):
+            write_retrieved_PT(retrieval_name, P, T_low2, T_low1,
+                               T_median, T_high1, T_high2)
+            write_retrieved_log_X(retrieval_name, model['chemical_species'], P,
+                                  log_X_low2, log_X_low1, log_X_median,
+                                  log_X_high1, log_X_high2)
+
+        print("Finished SBI postprocessing. Outputs written to " + output_dir)
+
+    comm.Barrier()
+    os.chdir(cwd_start)
+
+
+def retrieved_samples_from_posterior(samples, planet, star, model, opac, data, wl, P,
+                                     P_ref_set, R_p_ref_set, P_param_set, He_fraction,
+                                     N_slice_EM, N_slice_DN, spectrum_type, T_phot_grid,
+                                     T_het_grid, log_g_phot_grid, log_g_het_grid,
+                                     I_phot_grid, I_het_grid, y_p, F_s_obs,
+                                     constant_gravity, chemistry_grid,
+                                     N_output_samples):
+    '''
+    Draw sampled spectra / atmospheric profiles from a precomputed posterior sample array.
+    '''
+
+    disable_atmosphere = model['disable_atmosphere']
+    N_samples_total = len(samples[:, 0])
+    N_sample_draws = min(N_samples_total, N_output_samples)
+    sample_idx = np.random.choice(len(samples), N_sample_draws, replace=False)
+
+    print("Now generating " + str(N_sample_draws) + " sampled spectra and " +
+          "P-T profiles from the posterior distribution...")
+
+    best_fit_params = np.median(samples, axis=0)
+    ymodel_best, spectrum_best, atmosphere_best, _ = forward_model(
+        best_fit_params, planet, star, model, opac, data, wl, P, P_ref_set,
+        R_p_ref_set, P_param_set, He_fraction, N_slice_EM, N_slice_DN,
+        spectrum_type, T_phot_grid, T_het_grid, log_g_phot_grid, log_g_het_grid,
+        I_phot_grid, I_het_grid, y_p, F_s_obs, constant_gravity, chemistry_grid
+    )
+
+    if (disable_atmosphere == False):
+        T_best = atmosphere_best['T']
+    else:
+        T_best = 0.0
+
+    for i in range(N_sample_draws):
+        if (i == 0):
+            t0 = time.perf_counter()
+
+        param_vector = samples[sample_idx[i], :]
+        ymodel, spectrum, atmosphere, _ = forward_model(
+            param_vector, planet, star, model, opac, data, wl, P, P_ref_set,
+            R_p_ref_set, P_param_set, He_fraction, N_slice_EM, N_slice_DN,
+            spectrum_type, T_phot_grid, T_het_grid, log_g_phot_grid,
+            log_g_het_grid, I_phot_grid, I_het_grid, y_p, F_s_obs,
+            constant_gravity, chemistry_grid
+        )
+
+        if (i == 0):
+            t1 = time.perf_counter()
+            total = round_sig_figs((N_sample_draws * (t1-t0)/60.0), 2)
+            print('This process will take approximately ' + str(total) + ' minutes')
+
+            if (disable_atmosphere == False):
+                N_species, N_D, N_sectors, N_zones = np.shape(atmosphere['X'])
+                T_stored = np.zeros(shape=(N_sample_draws, N_D, N_sectors, N_zones))
+                log_X_stored = np.zeros(shape=(N_sample_draws, N_species, N_D, N_sectors, N_zones))
+
+            spectrum_stored = np.zeros(shape=(N_sample_draws, len(wl)))
+            if model['high_res_method'] is None:
+                ymodel_samples = np.zeros(shape=(N_sample_draws, len(ymodel)))
+
+        if (disable_atmosphere == False):
+            T_stored[i, :, :, :] = atmosphere['T']
+            log_X_stored[i, :, :, :, :] = np.log10(atmosphere['X'])
+
+        spectrum_stored[i, :] = spectrum
+        if model['high_res_method'] is None:
+            ymodel_samples[i, :] = ymodel
+
+    if (disable_atmosphere == False):
+        _, T_low2, T_low1, T_median, T_high1, T_high2, _ = confidence_intervals(
+            N_sample_draws, T_stored[:, :, 0, 0], N_D
+        )
+    else:
+        T_low2, T_low1, T_median, T_high1, T_high2 = None, None, None, None, None
+
+    if (disable_atmosphere == False):
+        log_X_low2 = np.zeros(shape=(N_species, N_D))
+        log_X_low1 = np.zeros(shape=(N_species, N_D))
+        log_X_median = np.zeros(shape=(N_species, N_D))
+        log_X_high1 = np.zeros(shape=(N_species, N_D))
+        log_X_high2 = np.zeros(shape=(N_species, N_D))
+        for q in range(N_species):
+            _, log_X_low2[q, :], log_X_low1[q, :], \
+            log_X_median[q, :], log_X_high1[q, :], \
+            log_X_high2[q, :], _ = confidence_intervals(
+                N_sample_draws, log_X_stored[:, q, :, 0, 0], N_D
+            )
+    else:
+        log_X_low2, log_X_low1, log_X_median, log_X_high1, log_X_high2 = None, None, None, None, None
+
+    _, spec_low2, spec_low1, spec_median, spec_high1, spec_high2, _ = confidence_intervals(
+        N_sample_draws, spectrum_stored, len(wl)
+    )
+
+    return T_low2, T_low1, T_median, T_high1, T_high2, \
+           log_X_low2, log_X_low1, log_X_median, log_X_high1, log_X_high2, \
+           spec_low2, spec_low1, spec_median, spec_high1, spec_high2, \
+           T_best, spectrum_best, ymodel_best, ymodel_samples
 
 
 def retrieved_samples(planet, star, model, opac, data, retrieval_name, wl, P, 

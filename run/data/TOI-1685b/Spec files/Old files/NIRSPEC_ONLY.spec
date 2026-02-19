@@ -1,0 +1,91 @@
+# %ECSV 1.0
+# ---
+# datatype:
+# - {name: iwave, datatype: int64}
+# - {name: wave, unit: um, datatype: float64}
+# - {name: waveMin, unit: um, datatype: float64}
+# - {name: waveMax, unit: um, datatype: float64}
+# - {name: yval, unit: ppm, datatype: float64}
+# - {name: yerrLow, unit: ppm, datatype: float64}
+# - {name: yerrUpp, unit: ppm, datatype: float64}
+# - {name: wlcLow, datatype: float64}
+# - {name: wlcUpp, datatype: float64}
+# - {name: ignore, datatype: int64}
+# - {name: referenceLink, datatype: string}
+# - {name: instrname, datatype: string}
+# - {name: reference, datatype: string}
+# - {name: bandpass, datatype: string}
+# delimiter: ','
+# meta: !!omap
+# - {waveunit: um}
+# - {name: NIRSPEC}
+# - {spectype: dppm}
+# - {ylabel: 'Transit Depth [ppm]'}
+# schema: astropy-2.0
+iwave,wave,waveMin,waveMax,yval,yerrLow,yerrUpp,wlcLow,wlcUpp,ignore,referenceLink,instrname,reference,bandpass
+0,2.8605,2.8605,2.8605,731.6,45.2,45.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+1,2.894,2.894,2.894,823.6,45.9,44.8,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+2,2.9275,2.9275,2.9275,703.9,43.6,41.0,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+3,2.961,2.961,2.961,756.2,40.4,39.5,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+4,2.9945,2.9945,2.9945,808.0,41.2,40.0,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+5,3.028,3.028,3.028,712.8,39.0,38.6,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+6,3.0615,3.0615,3.0615,864.7,39.2,40.3,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+7,3.095,3.095,3.095,785.7,40.0,39.2,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+8,3.1285,3.1285,3.1285,774.9,38.7,39.0,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+9,3.162,3.162,3.162,804.0,39.1,38.5,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+10,3.1955,3.1955,3.1955,761.8,38.0,36.7,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+11,3.229,3.229,3.229,862.8,39.3,38.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+12,3.2625,3.2625,3.2625,788.7,39.3,40.2,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+13,3.296,3.296,3.296,759.1,38.9,37.8,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+14,3.3295,3.3295,3.3295,841.9,38.5,38.8,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+15,3.363,3.363,3.363,827.5,38.7,38.2,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+16,3.3965,3.3965,3.3965,854.8,40.2,40.3,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+17,3.43,3.43,3.43,804.5,38.5,38.0,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+18,3.464,3.464,3.464,734.7,38.0,37.9,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+19,3.4975,3.4975,3.4975,817.7,40.0,39.9,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+20,3.531,3.531,3.531,760.6,40.5,39.5,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+21,3.5645,3.5645,3.5645,744.3,38.2,40.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+22,3.598,3.598,3.598,774.7,39.0,38.7,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+23,3.6315,3.6315,3.6315,810.1,39.2,39.9,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+24,3.665,3.665,3.665,775.7,40.6,39.6,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+25,3.6985,3.6985,3.6985,811.8,42.1,41.5,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+26,3.84,3.84,3.84,745.5,44.4,44.7,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+27,3.8735,3.8735,3.8735,743.9,45.4,46.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+28,3.907,3.907,3.907,753.5,44.8,43.9,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+29,3.941,3.941,3.941,754.7,47.5,47.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+30,3.975,3.975,3.975,771.6,47.8,47.3,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+31,4.0085,4.0085,4.0085,894.8,48.3,49.4,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+32,4.042,4.042,4.042,688.9,50.1,50.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+33,4.076,4.076,4.076,801.4,49.9,51.4,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+34,4.1095,4.1095,4.1095,725.7,49.5,51.5,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+35,4.143,4.143,4.143,718.2,50.7,51.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+36,4.177,4.177,4.177,715.1,52.9,53.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+37,4.211,4.211,4.211,706.6,51.9,53.7,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+38,4.2445,4.2445,4.2445,812.8,56.7,59.0,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+39,4.278,4.278,4.278,867.5,55.8,53.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+40,4.312,4.312,4.312,729.4,58.5,59.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+41,4.346,4.346,4.346,771.7,59.0,59.7,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+42,4.3795,4.3795,4.3795,776.3,65.4,65.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+43,4.413,4.413,4.413,750.1,62.0,64.7,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+44,4.447,4.447,4.447,721.5,65.7,67.6,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+45,4.481,4.481,4.481,662.8,68.9,68.4,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+46,4.5145,4.5145,4.5145,866.5,68.6,70.3,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+47,4.548,4.548,4.548,848.2,68.7,70.5,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+48,4.582,4.582,4.582,786.6,72.8,71.6,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+49,4.6155,4.6155,4.6155,793.7,77.9,75.3,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+50,4.649,4.649,4.649,833.3,71.9,74.4,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+51,4.683,4.683,4.683,778.2,74.3,75.8,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+52,4.717,4.717,4.717,895.4,73.6,75.9,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+53,4.7505,4.7505,4.7505,740.1,79.5,79.7,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+54,4.784,4.784,4.784,718.1,79.6,77.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+55,4.818,4.818,4.818,772.1,80.9,82.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+56,4.852,4.852,4.852,666.7,82.3,81.7,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+57,4.8855,4.8855,4.8855,785.7,84.8,86.8,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+58,4.919,4.919,4.919,805.5,83.1,83.1,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+59,4.953,4.953,4.953,751.9,87.3,88.5,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+60,4.9865,4.9865,4.9865,853.8,86.3,87.3,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+61,5.02,5.02,5.02,764.4,87.5,88.6,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+62,5.054,5.054,5.054,597.2,92.4,86.8,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+63,5.088,5.088,5.088,916.5,93.5,90.9,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+64,5.1215,5.1215,5.1215,738.5,96.6,94.6,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform
+65,5.155,5.155,5.155,829.3,102.0,100.0,0.0,0.0,0,none,NIRSPEC,ExoTEP,uniform

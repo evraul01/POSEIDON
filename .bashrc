@@ -1,0 +1,1 @@
+export OMPI_MCA_opal_cuda_support=true
