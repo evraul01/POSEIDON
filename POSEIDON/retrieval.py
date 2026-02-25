@@ -6,6 +6,7 @@ Functions related to atmospheric retrieval.
 import numpy as np
 import time
 import os
+from datetime import datetime
 import pymultinest
 from mpi4py import MPI
 from scipy.special import ndtri
@@ -34,6 +35,33 @@ rank = comm.Get_rank()
 
 # Create global variable needed for centred log-ratio prior function
 allowed_simplex = 1
+
+
+def _ensure_sbi_log_file(output_dir, retrieval_name, mode='train'):
+    '''
+    Create and return the SBI log file path inside POSEIDON output.
+    '''
+
+    log_dir = os.path.join(output_dir, 'sbi-logs')
+    os.makedirs(log_dir, exist_ok=True)
+
+    if mode == 'postprocess':
+        log_name = retrieval_name + '_postprocess.log'
+    else:
+        log_name = retrieval_name + '.log'
+
+    return os.path.join(log_dir, log_name)
+
+
+def _log_sbi(message, log_file=None):
+    '''
+    Print a message and optionally append it to an SBI log file.
+    '''
+
+    print(message)
+    if (log_file is not None):
+        with open(log_file, 'a') as f:
+            f.write(message + '\n')
 
 
 def run_retrieval(planet, star, model, opac, data, priors, wl, P, 
@@ -311,6 +339,20 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
 
         if (rank == 0):
             t0 = time.perf_counter()
+            sbi_log_file = _ensure_sbi_log_file(output_dir, retrieval_name, mode='train')
+            with open(sbi_log_file, 'a') as f:
+                f.write('\n' + '='*78 + '\n')
+                f.write('SBI run start: ' + datetime.utcnow().isoformat() + ' UTC\n')
+                f.write("Retrieval: " + retrieval_name + '\n')
+                f.write("Algorithm: " + str(sampling_algorithm) + '\n')
+                f.write("Round sizes: " + str(tuple(sbi_round_sizes)) + '\n')
+                f.write("Batch size: " + str(int(sbi_training_batch_size)) + '\n')
+                f.write("Posterior samples: " + str(int(sbi_posterior_samples)) + '\n')
+                f.write("Device: " + str(sbi_device) + '\n')
+                f.write("Density estimator: " + str(sbi_density_estimator) + '\n')
+                f.write("Hidden features: " + str(sbi_hidden_features) + '\n')
+                f.write("Num transforms: " + str(sbi_num_transforms) + '\n')
+                f.write("Seed: " + str(sbi_seed) + '\n')
 
             posterior, posterior_samples = SBI_NPE_retrieval(
                 planet, star, model, opac, data, prior_types, prior_ranges,
@@ -320,7 +362,7 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
                 constant_gravity, chemistry_grid, sbi_round_sizes,
                 sbi_training_batch_size, sbi_posterior_samples, sbi_device,
                 sbi_density_estimator, sbi_hidden_features, sbi_num_transforms,
-                sbi_seed,
+                sbi_seed, sbi_log_file,
             )
 
             T_low2, T_low1, T_median, \
@@ -371,8 +413,10 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
 
             t1 = time.perf_counter()
             total = round_sig_figs((t1-t0)/3600.0, 2)
-            print('POSEIDON SBI retrieval finished in ' + str(total) + ' hours')
-            print("All done! Output files can be found in " + output_dir + "results/")
+            _log_sbi('POSEIDON SBI retrieval finished in ' + str(total) + ' hours',
+                     sbi_log_file)
+            _log_sbi("All done! Output files can be found in " + output_dir + "results/",
+                     sbi_log_file)
 
     else:
         raise Exception("Error: unsupported sampling algorithm '" +
@@ -1204,7 +1248,8 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
                       y_p, F_s_obs, constant_gravity, chemistry_grid,
                       sbi_round_sizes, sbi_training_batch_size,
                       sbi_posterior_samples, sbi_device, sbi_density_estimator,
-                      sbi_hidden_features, sbi_num_transforms, sbi_seed):
+                      sbi_hidden_features, sbi_num_transforms, sbi_seed,
+                      sbi_log_file = None):
     '''
     Conduct an SNPE/NPE retrieval using the sbi package on the POSEIDON forward
     model.
@@ -1308,8 +1353,9 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
         if n_sim <= 0:
             raise Exception("Error: each sbi round must have a positive number of simulations.")
 
-        print("Starting SNPE round " + str(round_idx + 1) + "/" +
-              str(len(sbi_round_sizes)) + " with " + str(n_sim) + " proposal draws.")
+        _log_sbi("Starting SNPE round " + str(round_idx + 1) + "/" +
+                 str(len(sbi_round_sizes)) + " with " + str(n_sim) +
+                 " proposal draws.", sbi_log_file)
 
         t_round_start = time.perf_counter()
         t_prop_start = time.perf_counter()
@@ -1336,16 +1382,17 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
         posterior = inference.build_posterior(density_estimator)
         proposal = posterior.set_default_x(x_obs)
         t_round_end = time.perf_counter()
-        print("Finished SNPE round " + str(round_idx + 1) +
-              " with " + str(n_sim) + " simulations. " +
-              "Timings (s): propose=" + str(round(t_prop_end - t_prop_start, 2)) +
-              ", simulate=" + str(round(t_sim_end - t_sim_start, 2)) +
-              ", train=" + str(round(t_train_end - t_train_start, 2)) +
-              ", total=" + str(round(t_round_end - t_round_start, 2)) +
-              ". Invalid simulations in round = " + str(n_invalid) +
-              " (CLR=" + str(round_invalid_reasons['clr_simplex']) +
-              ", stellar=" + str(round_invalid_reasons['stellar']) +
-              ", forward_model_nan=" + str(round_invalid_reasons['forward_model_nan']) + ").")
+        _log_sbi("Finished SNPE round " + str(round_idx + 1) +
+                 " with " + str(n_sim) + " simulations. " +
+                 "Timings (s): propose=" + str(round(t_prop_end - t_prop_start, 2)) +
+                 ", simulate=" + str(round(t_sim_end - t_sim_start, 2)) +
+                 ", train=" + str(round(t_train_end - t_train_start, 2)) +
+                 ", total=" + str(round(t_round_end - t_round_start, 2)) +
+                 ". Invalid simulations in round = " + str(n_invalid) +
+                 " (CLR=" + str(round_invalid_reasons['clr_simplex']) +
+                 ", stellar=" + str(round_invalid_reasons['stellar']) +
+                 ", forward_model_nan=" + str(round_invalid_reasons['forward_model_nan']) + ").",
+                 sbi_log_file)
 
     with torch.no_grad():
         z_post = posterior.sample((int(sbi_posterior_samples),), x=x_obs).cpu().numpy()
@@ -1525,9 +1572,17 @@ def postprocess_sbi_raw(planet, star, model, opac, data, wl, P, priors = None,
     if (os.path.exists(sample_file) == False):
         raise Exception("Error: could not find SBI sample file: " + sample_file)
 
+    sbi_log_file = _ensure_sbi_log_file(output_dir, retrieval_name, mode='postprocess')
+    with open(sbi_log_file, 'a') as f:
+        f.write('\n' + '='*78 + '\n')
+        f.write('SBI postprocess start: ' + datetime.utcnow().isoformat() + ' UTC\n')
+        f.write("Retrieval: " + retrieval_name + '\n')
+        f.write("Round sizes metadata: " + str(tuple(sbi_round_sizes)) + '\n')
+
     samples = np.load(sample_file)
     if rank == 0:
-        print("Loaded " + str(len(samples)) + " SBI posterior samples from " + sample_file)
+        _log_sbi("Loaded " + str(len(samples)) + " SBI posterior samples from " +
+                 sample_file, sbi_log_file)
 
     if rank == 0:
         T_low2, T_low1, T_median, \
@@ -1566,7 +1621,8 @@ def postprocess_sbi_raw(planet, star, model, opac, data, wl, P, priors = None,
                                   log_X_low2, log_X_low1, log_X_median,
                                   log_X_high1, log_X_high2)
 
-        print("Finished SBI postprocessing. Outputs written to " + output_dir)
+        _log_sbi("Finished SBI postprocessing. Outputs written to " + output_dir,
+                 sbi_log_file)
 
     comm.Barrier()
     os.chdir(cwd_start)

@@ -5,6 +5,7 @@ Stellar spectra and star spot/faculae contamination calculations.
 
 import os
 import numpy as np
+from pathlib import Path
 from numba.core.decorators import jit
 from spectres import spectres
 import scipy.constants as sc
@@ -17,6 +18,55 @@ try:
     import pymsg as pymsg
 except ImportError:
     pymsg = mock_missing('pymsg')
+
+
+def _configure_pysynphot_paths():
+    """
+    Ensure pysynphot points to a valid stellar grid directory.
+
+    This guards against stale shell environment variables (e.g. moved
+    POSEIDON directories) and updates pysynphot's runtime path templates.
+    """
+
+    def _expand(path_str):
+        return os.path.abspath(os.path.expanduser(os.path.expandvars(path_str)))
+
+    candidates = []
+
+    # 1) Explicit PYSYN_CDBS from environment.
+    env_cdbs = os.environ.get('PYSYN_CDBS')
+    if env_cdbs:
+        candidates.append(_expand(env_cdbs))
+
+    # 2) POSEIDON input data variable + stellar_grids.
+    env_input = os.environ.get('POSEIDON_input_data')
+    if env_input:
+        candidates.append(os.path.join(_expand(env_input), 'stellar_grids'))
+
+    # 3) Repository-local fallback: <repo_root>/inputs/stellar_grids.
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates.append(str((repo_root / 'inputs' / 'stellar_grids').resolve()))
+
+    selected = None
+    for cand in candidates:
+        if os.path.isdir(os.path.join(cand, 'grid')):
+            selected = os.path.join(cand, '')  # Ensure trailing separator
+            break
+
+    if selected is None:
+        raise FileNotFoundError(
+            "Could not locate a valid stellar grid directory for pysynphot. "
+            "Checked PYSYN_CDBS, POSEIDON_input_data/stellar_grids, and "
+            "<POSEIDON>/inputs/stellar_grids."
+        )
+
+    # Keep environment and pysynphot runtime config in sync.
+    os.environ['PYSYN_CDBS'] = selected
+    psyn.locations.rootdir = selected
+    psyn.locations.CAT_TEMPLATE = os.path.join(selected, 'grid', '*', 'catalog.fits')
+    psyn.locations.KUR_TEMPLATE = os.path.join(selected, 'grid', '*')
+
+    return selected
 
 
 @jit(nopython = True)
@@ -84,7 +134,10 @@ def load_stellar_pysynphot(wl_out, T_eff, Met, log_g, stellar_grid = 'cbk04'):
 
     '''
     
-    # Load Phoenix model interpolated to stellar parameters
+    # Ensure pysynphot uses a valid stellar grid directory.
+    _configure_pysynphot_paths()
+
+    # Load stellar model interpolated to requested stellar parameters.
     if (stellar_grid == 'cbk04'):
         sp = psyn.Icat('ck04models', T_eff, Met, log_g)
     elif (stellar_grid == 'phoenix'):
