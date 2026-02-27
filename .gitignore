@@ -19,3 +19,4 @@ run/POSEIDON_output/
 *data_processed.hdf5
 POSEIDON/hierarchical.py
 inputs.zip
+.direnv
