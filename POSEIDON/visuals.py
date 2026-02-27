@@ -3138,7 +3138,7 @@ def plot_spectra_retrieved(spectra_median, spectra_low2, spectra_low1,
             elif (error_inflation == 'Piette20'):
 
                 # Extract median spectrum and wavelength grid
-                (spec_med, wl) = spectra_median[0]
+                (wl, spec_med) = spectra_median[0]
 
                 # Bin the median spectrum to the data resolution
                 ymodel_median = bin_spectrum_to_data(spec_med, wl, data_properties)
@@ -3150,7 +3150,7 @@ def plot_spectra_retrieved(spectra_median, spectra_low2, spectra_low1,
             elif (('Line15' in error_inflation) and ('Piette20' in error_inflation)):
 
                 # Extract median spectrum and wavelength grid
-                (spec_med, wl) = spectra_median[0]
+                (wl, spec_med) = spectra_median[0]
 
                 # Bin the median spectrum to the data resolution
                 ymodel_median = bin_spectrum_to_data(spec_med, wl, data_properties)
@@ -3172,7 +3172,7 @@ def plot_spectra_retrieved(spectra_median, spectra_low2, spectra_low1,
         # Loop over each model, finding the most extreme min / max range 
         for i in range(N_spectra):
             
-            wl_min_i = np.min(spectra_median[i][1])
+            wl_min_i = np.min(spectra_median[i][0])
             wl_min = min(wl_min, wl_min_i)
             
     # If the user did not specify a wavelength range, find min and max from input models
@@ -3183,7 +3183,7 @@ def plot_spectra_retrieved(spectra_median, spectra_low2, spectra_low1,
         # Loop over each model, finding the most extreme min / max range 
         for i in range(N_spectra):
             
-            wl_max_i = np.max(spectra_median[i][1])
+            wl_max_i = np.max(spectra_median[i][0])
             wl_max = max(wl_max, wl_max_i)
 
     # If the user did not specify a y range, find min and max from input models
@@ -3194,7 +3194,7 @@ def plot_spectra_retrieved(spectra_median, spectra_low2, spectra_low1,
         # Loop over each model, finding the most extreme min / max range 
         for i in range(N_spectra):
 
-            (spec_low2, wl) = spectra_low2[i]
+            (wl, spec_low2) = spectra_low2[i]
             _, spec_low2_binned, _ = bin_spectrum(wl, spec_low2, R_to_bin)
 
             y_min_i = np.min(spec_low2_binned)
@@ -3216,7 +3216,7 @@ def plot_spectra_retrieved(spectra_median, spectra_low2, spectra_low1,
         # Loop over each model, finding the most extreme min / max range 
         for i in range(N_spectra):
 
-            (spec_high2, wl) = spectra_high2[i]
+            (wl, spec_high2) = spectra_high2[i]
             _, spec_high2_binned, _ = bin_spectrum(wl, spec_high2, R_to_bin)
 
             y_max_i = np.max(spec_high2_binned)
@@ -3317,11 +3317,11 @@ def plot_spectra_retrieved(spectra_median, spectra_low2, spectra_low1,
     for i in range(N_spectra):
         
         # Extract spectrum and wavelength grid
-        (spec_med, wl) = spectra_median[i]
-        (spec_low1, wl) = spectra_low1[i]
-        (spec_low2, wl) = spectra_low2[i]
-        (spec_high1, wl) = spectra_high1[i]
-        (spec_high2, wl) = spectra_high2[i]
+        (wl, spec_med) = spectra_median[i]
+        (wl, spec_low1) = spectra_low1[i]
+        (wl, spec_low2) = spectra_low2[i]
+        (wl, spec_high1) = spectra_high1[i]
+        (wl, spec_high2) = spectra_high2[i]
         
         # If user did not specify a model label, just call them "Model 1, 2" etc.
         if (len(spectra_labels) == 0):

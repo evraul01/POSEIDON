@@ -20,3 +20,5 @@ run/POSEIDON_output/
 POSEIDON/hierarchical.py
 inputs.zip
 .direnv
+inputs_new.zip
+msg-2.0.2/

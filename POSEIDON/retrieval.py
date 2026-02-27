@@ -64,6 +64,51 @@ def _log_sbi(message, log_file=None):
             f.write(message + '\n')
 
 
+def _write_sbi_diagnostics(output_dir, retrieval_name, diagnostics):
+    '''
+    Save machine-readable SBI diagnostics in the sbi-logs directory.
+    '''
+
+    if diagnostics is None:
+        return
+
+    log_dir = os.path.join(output_dir, 'sbi-logs')
+    os.makedirs(log_dir, exist_ok=True)
+
+    round_file = os.path.join(log_dir, retrieval_name + '_round_diagnostics.csv')
+    summary_file = os.path.join(log_dir, retrieval_name + '_diagnostics_summary.txt')
+
+    with open(round_file, 'w') as f:
+        f.write('round,n_sim,n_valid,n_invalid,invalid_fraction,invalid_clr,invalid_stellar,invalid_forward_model_nan,')
+        f.write('t_propose_s,t_simulate_s,t_train_s,t_total_s\n')
+        for r in diagnostics.get('rounds', []):
+            f.write(
+                str(r['round']) + ',' +
+                str(r['n_sim']) + ',' +
+                str(r['n_valid']) + ',' +
+                str(r['n_invalid']) + ',' +
+                str(r['invalid_fraction']) + ',' +
+                str(r['invalid_clr']) + ',' +
+                str(r['invalid_stellar']) + ',' +
+                str(r['invalid_forward_model_nan']) + ',' +
+                str(r['t_propose_s']) + ',' +
+                str(r['t_simulate_s']) + ',' +
+                str(r['t_train_s']) + ',' +
+                str(r['t_total_s']) + '\n'
+            )
+
+    with open(summary_file, 'w') as f:
+        f.write('retrieval=' + str(retrieval_name) + '\n')
+        f.write('algorithm=' + str(diagnostics.get('algorithm')) + '\n')
+        f.write('n_rounds=' + str(diagnostics.get('n_rounds')) + '\n')
+        f.write('n_sim_total=' + str(diagnostics.get('n_sim_total')) + '\n')
+        f.write('n_invalid_total=' + str(diagnostics.get('n_invalid_total')) + '\n')
+        f.write('invalid_fraction_total=' + str(diagnostics.get('invalid_fraction_total')) + '\n')
+        f.write('n_posterior_draws=' + str(diagnostics.get('n_posterior_draws')) + '\n')
+        f.write('n_posterior_valid=' + str(diagnostics.get('n_posterior_valid')) + '\n')
+        f.write('posterior_valid_fraction=' + str(diagnostics.get('posterior_valid_fraction')) + '\n')
+
+
 def run_retrieval(planet, star, model, opac, data, priors, wl, P, 
                   P_ref = None, R_p_ref = None, P_param_set = 1.0e-2, 
                   R = None, retrieval_name = None, He_fraction = 0.17, 
@@ -106,7 +151,7 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
         ev_tol (float):
             MultiNest evidence tolerance.
         sampling_algorithm (str):
-            ``'MultiNest'`` or SBI aliases ``'sbi'``, ``'npe'``, ``'snpe'``.
+            ``'MultiNest'`` or SBI aliases ``'sbi'``, ``'npe'``, ``'snpe'``, ``'nle'``, ``'snle'``, ``'nre'``, ``'snre'``.
         resume (bool):
             Resume behavior for MultiNest run files.
         sampling_target (str):
@@ -131,8 +176,10 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
         sbi_device (str):
             PyTorch device string (e.g. ``'cpu'``, ``'cuda'``, ``'cuda:0'``).
         sbi_density_estimator (str):
-            Estimator family passed to ``sbi.neural_nets.posterior_nn``.
-            Typical options: ``'nsf'``, ``'maf'``, ``'mdn'``, ``'made'``.
+            Neural estimator keyword. For SNPE/NPE and SNLE/NLE this is passed to
+            ``posterior_nn`` / ``likelihood_nn`` (typical: ``'nsf'``, ``'maf'``,
+            ``'mdn'``, ``'made'``). For SNRE/NRE this selects classifier type
+            (recommended: ``'resnet'``).
         sbi_hidden_features (int):
             Hidden width for the SBI density-estimator network.
         sbi_num_transforms (int):
@@ -328,7 +375,7 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
 
             print("All done! Output files can be found in " + output_dir + "results/")
 
-    elif (sampling_algorithm.lower() in ['sbi', 'npe', 'snpe']):
+    elif (sampling_algorithm.lower() in ['sbi', 'npe', 'snpe', 'nle', 'snle', 'nre', 'snre']):
 
         if (model['Atmosphere_dimension'] != 1):
             raise Exception("Error: SBI retrieval currently supports only 1D models.")
@@ -354,7 +401,7 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
                 f.write("Num transforms: " + str(sbi_num_transforms) + '\n')
                 f.write("Seed: " + str(sbi_seed) + '\n')
 
-            posterior, posterior_samples = SBI_NPE_retrieval(
+            posterior, posterior_samples, sbi_diagnostics = SBI_NPE_retrieval(
                 planet, star, model, opac, data, prior_types, prior_ranges,
                 spectrum_type, wl, P, P_ref, R_p_ref, P_param_set, He_fraction,
                 N_slice_EM, N_slice_DN, T_phot_grid, T_het_grid, log_g_phot_grid,
@@ -362,7 +409,7 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
                 constant_gravity, chemistry_grid, sbi_round_sizes,
                 sbi_training_batch_size, sbi_posterior_samples, sbi_device,
                 sbi_density_estimator, sbi_hidden_features, sbi_num_transforms,
-                sbi_seed, sbi_log_file,
+                sbi_seed, sbi_log_file, sampling_algorithm,
             )
 
             T_low2, T_low1, T_median, \
@@ -413,7 +460,10 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
 
             t1 = time.perf_counter()
             total = round_sig_figs((t1-t0)/3600.0, 2)
+            _write_sbi_diagnostics(output_dir, retrieval_name, sbi_diagnostics)
             _log_sbi('POSEIDON SBI retrieval finished in ' + str(total) + ' hours',
+                     sbi_log_file)
+            _log_sbi('Wrote SBI diagnostics to ' + output_dir + 'sbi-logs/',
                      sbi_log_file)
             _log_sbi("All done! Output files can be found in " + output_dir + "results/",
                      sbi_log_file)
@@ -1249,16 +1299,22 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
                       sbi_round_sizes, sbi_training_batch_size,
                       sbi_posterior_samples, sbi_device, sbi_density_estimator,
                       sbi_hidden_features, sbi_num_transforms, sbi_seed,
-                      sbi_log_file = None):
+                      sbi_log_file = None, sampling_algorithm = 'sbi'):
     '''
-    Conduct an SNPE/NPE retrieval using the sbi package on the POSEIDON forward
-    model.
+    Conduct an SBI retrieval using sbi on the POSEIDON forward model.
+
+    Supported algorithms:
+    - SNPE / NPE (direct posterior, fast sampling)
+    - SNLE / NLE (likelihood estimator + MCMC posterior sampling)
+    - SNRE / NRE (ratio estimator + MCMC posterior sampling)
     '''
 
     import torch
-    from sbi.inference import SNPE
-    from sbi.neural_nets import posterior_nn
+    from sbi.inference import SNPE, SNLE, SNRE
+    from sbi.neural_nets import posterior_nn, likelihood_nn, classifier_nn
     from sbi.utils import BoxUniform
+
+    alg = str(sampling_algorithm).lower()
 
     param_names = model['param_names']
     N_params = len(param_names)
@@ -1278,17 +1334,47 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
     high = torch.ones(N_params, dtype=torch.float32, device=sbi_device)
     prior_z = BoxUniform(low=low, high=high, device=sbi_device)
 
-    density_estimator = posterior_nn(
-        model=sbi_density_estimator,
-        hidden_features=sbi_hidden_features,
-        num_transforms=sbi_num_transforms,
-    )
-    inference = SNPE(
-        prior=prior_z,
-        density_estimator=density_estimator,
-        device=sbi_device,
-        show_progress_bars=True
-    )
+    # Build inference object per algorithm.
+    if alg in ['sbi', 'npe', 'snpe']:
+        density_estimator = posterior_nn(
+            model=sbi_density_estimator,
+            hidden_features=sbi_hidden_features,
+            num_transforms=sbi_num_transforms,
+        )
+        inference = SNPE(
+            prior=prior_z,
+            density_estimator=density_estimator,
+            device=sbi_device,
+            show_progress_bars=True,
+        )
+    elif alg in ['nle', 'snle']:
+        density_estimator = likelihood_nn(
+            model=sbi_density_estimator,
+            hidden_features=sbi_hidden_features,
+            num_transforms=sbi_num_transforms,
+        )
+        inference = SNLE(
+            prior=prior_z,
+            density_estimator=density_estimator,
+            device=sbi_device,
+            show_progress_bars=True,
+        )
+    elif alg in ['nre', 'snre']:
+        classifier_model = sbi_density_estimator
+        if classifier_model in ['nsf', 'maf', 'mdn', 'made']:
+            classifier_model = 'resnet'
+        density_estimator = classifier_nn(
+            model=classifier_model,
+            hidden_features=sbi_hidden_features,
+        )
+        inference = SNRE(
+            prior=prior_z,
+            classifier=density_estimator,
+            device=sbi_device,
+            show_progress_bars=True,
+        )
+    else:
+        raise Exception("Error: unsupported sbi algorithm '" + str(sampling_algorithm) + "'.")
 
     round_invalid_reasons = {'clr_simplex': 0, 'stellar': 0, 'forward_model_nan': 0}
 
@@ -1348,14 +1434,16 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
 
     posterior = None
     proposal = prior_z
+    round_records = []
+
     for round_idx, n_sim in enumerate(sbi_round_sizes):
         n_sim = int(n_sim)
         if n_sim <= 0:
             raise Exception("Error: each sbi round must have a positive number of simulations.")
 
-        _log_sbi("Starting SNPE round " + str(round_idx + 1) + "/" +
+        _log_sbi("Starting SBI round " + str(round_idx + 1) + "/" +
                  str(len(sbi_round_sizes)) + " with " + str(n_sim) +
-                 " proposal draws.", sbi_log_file)
+                 " proposal draws (algorithm=" + alg + ").", sbi_log_file)
 
         t_round_start = time.perf_counter()
         t_prop_start = time.perf_counter()
@@ -1371,18 +1459,48 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
         x = simulator(z)
         x_flat = x.reshape(x.shape[0], -1)
         n_invalid = int((~torch.isfinite(x_flat).all(dim=1)).sum().item())
+        n_valid = int(n_sim - n_invalid)
+        invalid_fraction = float(n_invalid / n_sim)
         t_sim_end = time.perf_counter()
 
         t_train_start = time.perf_counter()
-        density_estimator = inference.append_simulations(
-            z, x, proposal=proposal, exclude_invalid_x=True
-        ).train(training_batch_size=sbi_training_batch_size)
+        if alg in ['sbi', 'npe', 'snpe']:
+            density_estimator = inference.append_simulations(
+                z, x, proposal=proposal, exclude_invalid_x=True
+            ).train(training_batch_size=sbi_training_batch_size)
+            posterior = inference.build_posterior(density_estimator)
+        else:
+            density_estimator = inference.append_simulations(
+                z, x, exclude_invalid_x=True, from_round=round_idx
+            ).train(training_batch_size=sbi_training_batch_size)
+            posterior = inference.build_posterior(
+                density_estimator,
+                sample_with='mcmc',
+                mcmc_method='slice_np_vectorized'
+            )
+
+        proposal = posterior.set_default_x(x_obs)
         t_train_end = time.perf_counter()
 
-        posterior = inference.build_posterior(density_estimator)
-        proposal = posterior.set_default_x(x_obs)
         t_round_end = time.perf_counter()
-        _log_sbi("Finished SNPE round " + str(round_idx + 1) +
+
+        record = {
+            'round': int(round_idx + 1),
+            'n_sim': int(n_sim),
+            'n_valid': int(n_valid),
+            'n_invalid': int(n_invalid),
+            'invalid_fraction': float(invalid_fraction),
+            'invalid_clr': int(round_invalid_reasons['clr_simplex']),
+            'invalid_stellar': int(round_invalid_reasons['stellar']),
+            'invalid_forward_model_nan': int(round_invalid_reasons['forward_model_nan']),
+            't_propose_s': float(round(t_prop_end - t_prop_start, 4)),
+            't_simulate_s': float(round(t_sim_end - t_sim_start, 4)),
+            't_train_s': float(round(t_train_end - t_train_start, 4)),
+            't_total_s': float(round(t_round_end - t_round_start, 4)),
+        }
+        round_records.append(record)
+
+        _log_sbi("Finished SBI round " + str(round_idx + 1) +
                  " with " + str(n_sim) + " simulations. " +
                  "Timings (s): propose=" + str(round(t_prop_end - t_prop_start, 2)) +
                  ", simulate=" + str(round(t_sim_end - t_sim_start, 2)) +
@@ -1410,7 +1528,22 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
 
     posterior_samples = np.array(posterior_samples)
 
-    return posterior, posterior_samples
+    n_sim_total = int(np.sum(np.array([r['n_sim'] for r in round_records])))
+    n_invalid_total = int(np.sum(np.array([r['n_invalid'] for r in round_records])))
+
+    diagnostics = {
+        'algorithm': alg,
+        'n_rounds': int(len(round_records)),
+        'n_sim_total': n_sim_total,
+        'n_invalid_total': n_invalid_total,
+        'invalid_fraction_total': float(n_invalid_total / n_sim_total) if n_sim_total > 0 else np.nan,
+        'n_posterior_draws': int(len(z_post)),
+        'n_posterior_valid': int(len(posterior_samples)),
+        'posterior_valid_fraction': float(len(posterior_samples) / len(z_post)) if len(z_post) > 0 else np.nan,
+        'rounds': round_records,
+    }
+
+    return posterior, posterior_samples, diagnostics
 
 
 def posterior_stats(samples):
