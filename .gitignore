@@ -20,3 +20,8 @@ run/POSEIDON_output/
 POSEIDON/hierarchical.py
 inputs.zip
 .direnv
+flake.nix
+.python-version
+README.md
+pyproject.toml
+uv.lock

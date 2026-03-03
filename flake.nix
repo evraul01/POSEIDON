@@ -23,12 +23,13 @@
             # PUT PACKAGES HERE
             # lazygit
             fastfetch
+            uv
           ];
 
           shellHook = with pkgs; ''
-            eval "$(conda shell.bash hook)"
-	    conda activate .atmos_24
-	    echo "activating .atmos_24"
+            # eval "$(conda shell.bash hook)"
+            # conda activate .atmos_24
+            # echo "activating .atmos_24"
           '';
 
         };
