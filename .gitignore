@@ -20,8 +20,11 @@ run/POSEIDON_output/
 POSEIDON/hierarchical.py
 inputs.zip
 .direnv
+inputs_new.zip
+msg-2.0.2/
 flake.nix
 .python-version
 README.md
 pyproject.toml
 uv.lock
+run/sbi-logs

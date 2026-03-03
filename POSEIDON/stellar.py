@@ -19,6 +19,8 @@ try:
 except ImportError:
     pymsg = mock_missing('pymsg')
 
+_PYSYN_PATH_NOTICE_PRINTED = False
+
 
 def _configure_pysynphot_paths():
     """
@@ -38,27 +40,49 @@ def _configure_pysynphot_paths():
     if env_cdbs:
         candidates.append(_expand(env_cdbs))
 
-    # 2) POSEIDON input data variable + stellar_grids.
+    # 2) POSEIDON input data variable variants.
     env_input = os.environ.get('POSEIDON_input_data')
     if env_input:
-        candidates.append(os.path.join(_expand(env_input), 'stellar_grids'))
+        env_input_expanded = _expand(env_input)
+        candidates.extend([
+            env_input_expanded,
+            os.path.join(env_input_expanded, 'stellar_grids'),
+            os.path.join(env_input_expanded, 'inputs', 'stellar_grids'),
+            os.path.join(env_input_expanded, 'inputs_old', 'stellar_grids'),
+        ])
 
-    # 3) Repository-local fallback: <repo_root>/inputs/stellar_grids.
+    # 3) Repository-local fallbacks for common input layouts.
     repo_root = Path(__file__).resolve().parents[1]
-    candidates.append(str((repo_root / 'inputs' / 'stellar_grids').resolve()))
+    candidates.extend([
+        str((repo_root / 'inputs' / 'stellar_grids').resolve()),
+        str((repo_root / 'inputs_old' / 'stellar_grids').resolve()),
+        str((repo_root / 'inputs' / 'inputs' / 'stellar_grids').resolve()),
+    ])
+
+    # De-duplicate while preserving order.
+    candidates = list(dict.fromkeys(candidates))
 
     selected = None
-    for cand in candidates:
+    selected_idx = None
+    for idx, cand in enumerate(candidates):
         if os.path.isdir(os.path.join(cand, 'grid')):
             selected = os.path.join(cand, '')  # Ensure trailing separator
+            selected_idx = idx
             break
 
     if selected is None:
         raise FileNotFoundError(
             "Could not locate a valid stellar grid directory for pysynphot. "
-            "Checked PYSYN_CDBS, POSEIDON_input_data/stellar_grids, and "
-            "<POSEIDON>/inputs/stellar_grids."
+            "Checked: " + ", ".join(candidates)
         )
+
+    # Emit one-time notice if a fallback path was required.
+    global _PYSYN_PATH_NOTICE_PRINTED
+    if (selected_idx is not None) and (selected_idx > 0) and (_PYSYN_PATH_NOTICE_PRINTED is False):
+        print("[POSEIDON] PYSYN_CDBS primary path unavailable. Using fallback stellar grid path: " + selected)
+        print("[POSEIDON] Fallback candidate index = " + str(selected_idx) +
+              " (0 means primary env PYSYN_CDBS path).")
+        _PYSYN_PATH_NOTICE_PRINTED = True
 
     # Keep environment and pysynphot runtime config in sync.
     os.environ['PYSYN_CDBS'] = selected
