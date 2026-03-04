@@ -37,6 +37,15 @@ rank = comm.Get_rank()
 allowed_simplex = 1
 
 
+def _poseidon_output_retrieval_dir(planet_name):
+    '''
+    Return absolute retrieval output directory under <repo>/run/POSEIDON_output.
+    '''
+
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    return os.path.join(repo_root, 'run', 'POSEIDON_output', planet_name, 'retrievals') + '/'
+
+
 def _ensure_sbi_log_file(output_dir, retrieval_name, mode='train'):
     '''
     Create and return the SBI log file path inside POSEIDON output.
@@ -50,7 +59,7 @@ def _ensure_sbi_log_file(output_dir, retrieval_name, mode='train'):
     else:
         log_name = retrieval_name + '.log'
 
-    return os.path.join(log_dir, log_name)
+    return os.path.abspath(os.path.join(log_dir, log_name))
 
 
 def _log_sbi(message, log_file=None):
@@ -60,6 +69,7 @@ def _log_sbi(message, log_file=None):
 
     print(message)
     if (log_file is not None):
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
         with open(log_file, 'a') as f:
             f.write(message + '\n')
 
@@ -151,7 +161,13 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
         ev_tol (float):
             MultiNest evidence tolerance.
         sampling_algorithm (str):
-            ``'MultiNest'`` or SBI aliases ``'sbi'``, ``'npe'``, ``'snpe'``, ``'nle'``, ``'snle'``, ``'nre'``, ``'snre'``.
+            ``'MultiNest'`` or SBI aliases ``'sbi'``, ``'npe'``, ``'snpe'``,
+            ``'npe_c'``, ``'snpe_c'``, ``'npe_a'``, ``'snpe_a'``, ``'fmpe'``,
+            ``'npse'``, ``'nle'``, ``'snle'``, ``'nle_a'``, ``'snle_a'``,
+            ``'nre'``, ``'snre'``, ``'nre_a'``, ``'snre_a'``, ``'nre_b'``,
+            ``'snre_b'``, ``'nre_c'``, ``'snre_c'``, ``'bnre'``.
+            ``'npe'``/``'snpe'`` use default NPE-C; ``'npe_a'``/``'snpe_a'``
+            explicitly select NPE-A.
         resume (bool):
             Resume behavior for MultiNest run files.
         sampling_target (str):
@@ -233,7 +249,7 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
         retrieval_name = model_name + '_' + retrieval_name
 
     # Identify output directory location
-    output_dir = './POSEIDON_output/' + planet_name + '/retrievals/'
+    output_dir = _poseidon_output_retrieval_dir(planet_name)
 
     # Load chemistry grid (e.g. equilibrium chemistry) if option selected
     if X_profile == "chem_eq":
@@ -375,7 +391,7 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
 
             print("All done! Output files can be found in " + output_dir + "results/")
 
-    elif (sampling_algorithm.lower() in ['sbi', 'npe', 'snpe', 'nle', 'snle', 'nre', 'snre']):
+    elif (sampling_algorithm.lower() in ['sbi', 'npe', 'snpe', 'npe_c', 'snpe_c', 'npe_a', 'snpe_a', 'fmpe', 'npse', 'nle', 'snle', 'nle_a', 'snle_a', 'nre', 'snre', 'nre_a', 'snre_a', 'nre_b', 'snre_b', 'nre_c', 'snre_c', 'bnre']):
 
         if (model['Atmosphere_dimension'] != 1):
             raise Exception("Error: SBI retrieval currently supports only 1D models.")
@@ -1303,14 +1319,23 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
     '''
     Conduct an SBI retrieval using sbi on the POSEIDON forward model.
 
-    Supported algorithms:
-    - SNPE / NPE (direct posterior, fast sampling)
-    - SNLE / NLE (likelihood estimator + MCMC posterior sampling)
-    - SNRE / NRE (ratio estimator + MCMC posterior sampling)
+    Supported algorithms (sampling_algorithm aliases):
+    - Default NPE-C path: 'sbi', 'npe', 'snpe', 'npe_c', 'snpe_c'.
+    - NPE-A path: 'npe_a', 'snpe_a'.
+    - Vector-field posterior estimators: 'fmpe', 'npse' (single-round only).
+    - NLE-A likelihood path: 'nle', 'snle', 'nle_a', 'snle_a'.
+    - NRE family ratio path: 'nre', 'snre', 'nre_b', 'snre_b',
+      'nre_a', 'snre_a', 'nre_c', 'snre_c', 'bnre'.
+
+    Notes on alias behavior:
+    - If you set sampling_algorithm='npe' or 'snpe', POSEIDON uses default
+      NPE behavior (NPE-C).
+    - NPE-A is used only when sampling_algorithm is explicitly 'npe_a'
+      or 'snpe_a'.
     '''
 
     import torch
-    from sbi.inference import SNPE, SNLE, SNRE
+    from sbi.inference import NPE, NPE_A, NLE_A, NRE_A, NRE_B, NRE_C, BNRE, FMPE, NPSE
     from sbi.neural_nets import posterior_nn, likelihood_nn, classifier_nn
     from sbi.utils import BoxUniform
 
@@ -1335,31 +1360,66 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
     prior_z = BoxUniform(low=low, high=high, device=sbi_device)
 
     # Build inference object per algorithm.
-    if alg in ['sbi', 'npe', 'snpe']:
+    if alg in ['npe_a', 'snpe_a']:
+        if (str(sbi_density_estimator) != 'mdn_snpe_a'):
+            _log_sbi("NPE_A requires 'mdn_snpe_a'; overriding provided density estimator '" +
+                     str(sbi_density_estimator) + "'.", sbi_log_file)
+        inference = NPE_A(
+            prior=prior_z,
+            density_estimator='mdn_snpe_a',
+            device=sbi_device,
+            show_progress_bars=True,
+        )
+
+    elif alg in ['sbi', 'npe', 'snpe', 'npe_c', 'snpe_c']:
         density_estimator = posterior_nn(
             model=sbi_density_estimator,
             hidden_features=sbi_hidden_features,
             num_transforms=sbi_num_transforms,
         )
-        inference = SNPE(
+        inference = NPE(
             prior=prior_z,
             density_estimator=density_estimator,
             device=sbi_device,
             show_progress_bars=True,
         )
-    elif alg in ['nle', 'snle']:
+
+    elif alg in ['fmpe']:
+        if (len(sbi_round_sizes) > 1):
+            raise Exception("Error: FMPE currently supports single-round training only. " +
+                            "Set sbi_round_sizes to one entry, e.g. (16000,).")
+        inference = FMPE(
+            prior=prior_z,
+            vf_estimator='mlp',
+            device=sbi_device,
+            show_progress_bars=True,
+        )
+
+    elif alg in ['npse']:
+        if (len(sbi_round_sizes) > 1):
+            raise Exception("Error: NPSE currently supports single-round training only. " +
+                            "Set sbi_round_sizes to one entry, e.g. (16000,).")
+        inference = NPSE(
+            prior=prior_z,
+            vf_estimator='mlp',
+            device=sbi_device,
+            show_progress_bars=True,
+        )
+
+    elif alg in ['nle', 'snle', 'nle_a', 'snle_a']:
         density_estimator = likelihood_nn(
             model=sbi_density_estimator,
             hidden_features=sbi_hidden_features,
             num_transforms=sbi_num_transforms,
         )
-        inference = SNLE(
+        inference = NLE_A(
             prior=prior_z,
             density_estimator=density_estimator,
             device=sbi_device,
             show_progress_bars=True,
         )
-    elif alg in ['nre', 'snre']:
+
+    elif alg in ['nre', 'snre', 'nre_b', 'snre_b', 'nre_a', 'snre_a', 'nre_c', 'snre_c', 'bnre']:
         classifier_model = sbi_density_estimator
         if classifier_model in ['nsf', 'maf', 'mdn', 'made']:
             classifier_model = 'resnet'
@@ -1367,12 +1427,36 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
             model=classifier_model,
             hidden_features=sbi_hidden_features,
         )
-        inference = SNRE(
-            prior=prior_z,
-            classifier=density_estimator,
-            device=sbi_device,
-            show_progress_bars=True,
-        )
+
+        if alg in ['nre_a', 'snre_a']:
+            inference = NRE_A(
+                prior=prior_z,
+                classifier=density_estimator,
+                device=sbi_device,
+                show_progress_bars=True,
+            )
+        elif alg in ['nre_c', 'snre_c']:
+            inference = NRE_C(
+                prior=prior_z,
+                classifier=density_estimator,
+                device=sbi_device,
+                show_progress_bars=True,
+            )
+        elif alg in ['bnre']:
+            inference = BNRE(
+                prior=prior_z,
+                classifier=density_estimator,
+                device=sbi_device,
+                show_progress_bars=True,
+            )
+        else:
+            inference = NRE_B(
+                prior=prior_z,
+                classifier=density_estimator,
+                device=sbi_device,
+                show_progress_bars=True,
+            )
+
     else:
         raise Exception("Error: unsupported sbi algorithm '" + str(sampling_algorithm) + "'.")
 
@@ -1464,12 +1548,30 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
         t_sim_end = time.perf_counter()
 
         t_train_start = time.perf_counter()
-        if alg in ['sbi', 'npe', 'snpe']:
+        if alg in ['npe_a', 'snpe_a']:
+            density_estimator = inference.append_simulations(
+                z, x, proposal=proposal, exclude_invalid_x=True
+            ).train(
+                final_round=(round_idx == (len(sbi_round_sizes) - 1)),
+                training_batch_size=sbi_training_batch_size
+            )
+            posterior = inference.build_posterior(density_estimator)
+
+        elif alg in ['sbi', 'npe', 'snpe', 'npe_c', 'snpe_c']:
             density_estimator = inference.append_simulations(
                 z, x, proposal=proposal, exclude_invalid_x=True
             ).train(training_batch_size=sbi_training_batch_size)
             posterior = inference.build_posterior(density_estimator)
-        else:
+
+        elif alg in ['fmpe', 'npse']:
+            density_estimator = inference.append_simulations(
+                z, x, proposal=None, exclude_invalid_x=True
+            ).train(training_batch_size=sbi_training_batch_size)
+            posterior = inference.build_posterior(density_estimator)
+
+        elif alg in ['nle', 'snle', 'nle_a', 'snle_a',
+                     'nre', 'snre', 'nre_a', 'snre_a', 'nre_b', 'snre_b',
+                     'nre_c', 'snre_c', 'bnre']:
             density_estimator = inference.append_simulations(
                 z, x, exclude_invalid_x=True, from_round=round_idx
             ).train(training_batch_size=sbi_training_batch_size)
@@ -1478,6 +1580,9 @@ def SBI_NPE_retrieval(planet, star, model, opac, data, prior_types, prior_ranges
                 sample_with='mcmc',
                 mcmc_method='slice_np_vectorized'
             )
+
+        else:
+            raise Exception("Error: unsupported sbi algorithm '" + str(sampling_algorithm) + "'.")
 
         proposal = posterior.set_default_x(x_obs)
         t_train_end = time.perf_counter()
@@ -1652,7 +1757,7 @@ def postprocess_sbi_raw(planet, star, model, opac, data, wl, P, priors = None,
     planet_name = planet['planet_name']
     model_name = model['model_name']
     retrieval_name = model_name if retrieval_name is None else (model_name + '_' + retrieval_name)
-    output_dir = './POSEIDON_output/' + planet_name + '/retrievals/'
+    output_dir = _poseidon_output_retrieval_dir(planet_name)
     cwd_start = os.getcwd()
 
     param_species = model['param_species']
