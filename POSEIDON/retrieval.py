@@ -428,6 +428,18 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
                 sbi_seed, sbi_log_file, sampling_algorithm,
             )
 
+            os.makedirs(output_dir + 'SBI_raw/', exist_ok=True)
+            os.chdir(output_dir + 'SBI_raw/')
+            np.save(retrieval_name + '_samples.npy', posterior_samples)
+            try:
+                import torch
+                torch.save(posterior, retrieval_name + '_posterior.pt')
+            except Exception:
+                pass
+            os.chdir('../MultiNest_raw/')
+            _log_sbi("Saved SBI raw posterior artifacts to " + output_dir + "SBI_raw/ before posterior-spectrum postprocessing.",
+                     sbi_log_file)
+
             T_low2, T_low1, T_median, \
             T_high1, T_high2, \
             log_X_low2, log_X_low1, \
@@ -445,16 +457,6 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
                 constant_gravity, chemistry_grid, N_output_samples
             )
 
-            os.makedirs(output_dir + 'SBI_raw/', exist_ok=True)
-            os.chdir(output_dir + 'SBI_raw/')
-            np.save(retrieval_name + '_samples.npy', posterior_samples)
-            try:
-                import torch
-                torch.save(posterior, retrieval_name + '_posterior.pt')
-            except Exception:
-                pass
-            os.chdir('../MultiNest_raw/')
-
             write_SBI_results(planet, model, data, retrieval_name, sbi_round_sizes,
                               sampling_algorithm, wl, R,
                               posterior_samples, ymodel_best, spectrum_type)
@@ -467,12 +469,15 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
                 np.savetxt('../samples/' + retrieval_name + '_ymodel_samples.txt',
                            ymodel_samples_object.T)
 
-            if (disable_atmosphere == False):
+            if (disable_atmosphere == False) and (T_low2 is not None) and (log_X_low2 is not None):
                 write_retrieved_PT(retrieval_name, P, T_low2, T_low1, T_median,
                                    T_high1, T_high2)
                 write_retrieved_log_X(retrieval_name, chemical_species, P,
                                       log_X_low2, log_X_low1, log_X_median,
                                       log_X_high1, log_X_high2)
+            elif (disable_atmosphere == False):
+                _log_sbi("Skipped writing retrieved PT/log_X files because atmospheric profile arrays were unavailable during posterior sampling.",
+                         sbi_log_file)
 
             t1 = time.perf_counter()
             total = round_sig_figs((t1-t0)/3600.0, 2)
@@ -1852,12 +1857,15 @@ def postprocess_sbi_raw(planet, star, model, opac, data, wl, P, priors = None,
             np.savetxt('../samples/' + retrieval_name + '_ymodel_samples.txt',
                        ymodel_samples_object.T)
 
-        if (model['disable_atmosphere'] == False):
+        if (model['disable_atmosphere'] == False) and (T_low2 is not None) and (log_X_low2 is not None):
             write_retrieved_PT(retrieval_name, P, T_low2, T_low1,
                                T_median, T_high1, T_high2)
             write_retrieved_log_X(retrieval_name, model['chemical_species'], P,
                                   log_X_low2, log_X_low1, log_X_median,
                                   log_X_high1, log_X_high2)
+        elif (model['disable_atmosphere'] == False):
+            _log_sbi("Skipped writing retrieved PT/log_X files in postprocess mode because atmospheric profile arrays were unavailable in sampled forward models.",
+                     sbi_log_file)
 
         _log_sbi("Finished SBI postprocessing. Outputs written to " + output_dir,
                  sbi_log_file)
@@ -1893,10 +1901,8 @@ def retrieved_samples_from_posterior(samples, planet, star, model, opac, data, w
         I_phot_grid, I_het_grid, y_p, F_s_obs, constant_gravity, chemistry_grid
     )
 
-    if (disable_atmosphere == False):
-        T_best = atmosphere_best['T']
-    else:
-        T_best = 0.0
+    profile_outputs_available = (disable_atmosphere == False)
+    T_best = atmosphere_best.get('T', 0.0) if profile_outputs_available else 0.0
 
     for i in range(N_sample_draws):
         if (i == 0):
@@ -1916,16 +1922,25 @@ def retrieved_samples_from_posterior(samples, planet, star, model, opac, data, w
             total = round_sig_figs((N_sample_draws * (t1-t0)/60.0), 2)
             print('This process will take approximately ' + str(total) + ' minutes')
 
-            if (disable_atmosphere == False):
-                N_species, N_D, N_sectors, N_zones = np.shape(atmosphere['X'])
-                T_stored = np.zeros(shape=(N_sample_draws, N_D, N_sectors, N_zones))
-                log_X_stored = np.zeros(shape=(N_sample_draws, N_species, N_D, N_sectors, N_zones))
+            if profile_outputs_available:
+                X_arr = np.asarray(atmosphere.get('X', np.array([])))
+                T_arr = np.asarray(atmosphere.get('T', np.array([])))
+                if (X_arr.ndim == 4) and (T_arr.ndim == 3) and (X_arr.shape[1:] == T_arr.shape):
+                    N_species, N_D, N_sectors, N_zones = X_arr.shape
+                    T_stored = np.zeros(shape=(N_sample_draws, N_D, N_sectors, N_zones))
+                    log_X_stored = np.zeros(shape=(N_sample_draws, N_species, N_D, N_sectors, N_zones))
+                else:
+                    profile_outputs_available = False
+                    T_best = 0.0
+                    print("Warning: SBI postprocessing could not store atmospheric profiles because forward_model returned invalid profile arrays.")
+                    print("Expected shapes: X is 4D and T is 3D with matching pressure/geometry axes.")
+                    print("Continuing in spectra-only mode: retrieved PT and abundance profile files will be skipped for this run.")
 
             spectrum_stored = np.zeros(shape=(N_sample_draws, len(wl)))
             if model['high_res_method'] is None:
                 ymodel_samples = np.zeros(shape=(N_sample_draws, len(ymodel)))
 
-        if (disable_atmosphere == False):
+        if profile_outputs_available:
             T_stored[i, :, :, :] = atmosphere['T']
             log_X_stored[i, :, :, :, :] = np.log10(atmosphere['X'])
 
@@ -1933,14 +1948,14 @@ def retrieved_samples_from_posterior(samples, planet, star, model, opac, data, w
         if model['high_res_method'] is None:
             ymodel_samples[i, :] = ymodel
 
-    if (disable_atmosphere == False):
+    if profile_outputs_available:
         _, T_low2, T_low1, T_median, T_high1, T_high2, _ = confidence_intervals(
             N_sample_draws, T_stored[:, :, 0, 0], N_D
         )
     else:
         T_low2, T_low1, T_median, T_high1, T_high2 = None, None, None, None, None
 
-    if (disable_atmosphere == False):
+    if profile_outputs_available:
         log_X_low2 = np.zeros(shape=(N_species, N_D))
         log_X_low1 = np.zeros(shape=(N_species, N_D))
         log_X_median = np.zeros(shape=(N_species, N_D))
@@ -2189,7 +2204,7 @@ def get_retrieved_atmosphere(planet, model, P, P_ref_set = 10, R_p_ref_set = Non
     else:
 
         # Identify output directory location
-        output_dir = './POSEIDON_output/' + planet_name + '/retrievals/'
+        output_dir = _poseidon_output_retrieval_dir(planet_name)
 
         # Load relevant output directory
         output_prefix = model['model_name'] + '-'
@@ -2345,7 +2360,7 @@ def Bayesian_model_comparison(planet_name, model_1, model_2,
     n_params_2 = len(model_2['param_names'])
 
     # Access directory containing raw MultiNest files
-    output_dir = './POSEIDON_output/' + planet_name + '/retrievals/MultiNest_raw/'
+    output_dir = _poseidon_output_retrieval_dir(planet_name) + 'MultiNest_raw/'
 
     # Change directory into MultiNest result file folder
     os.chdir(output_dir)
