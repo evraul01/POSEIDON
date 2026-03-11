@@ -1,0 +1,14 @@
+name: .atmos_25
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - mpi4py
+  - cuda-cudart
+  - cuda-version=13
+  - nccl
+  - pymultinest
+  - cython
+  - xarray
+  - numpy[version='<2']
+prefix: /home/eraul/miniconda3/envs/.atmos_25
