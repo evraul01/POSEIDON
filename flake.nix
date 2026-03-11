@@ -21,7 +21,7 @@
 
           buildInputs = with pkgs; [
             # PUT PACKAGES HERE
-            # lazygit
+            lazygit
             fastfetch
             uv
           ];
