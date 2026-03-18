@@ -51,7 +51,7 @@ data_included = 'NIRSpec_G395H'
 
 #model_name = 'joint_flat_CLR_' + data_included
 #model_name = 'joint_multigas-H2O_TS_CLR_' + data_included
-model_name = 'SNPE' + '_minimal_' + data_included
+model_name = retrieval_algorithm.upper() + '_minimal_' + data_included
 
 
 stellar_contam = None

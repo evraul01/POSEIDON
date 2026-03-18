@@ -37,21 +37,21 @@ import matplotlib.pyplot as plt
 
 from scipy.constants import parsec as pc
 
-do_retrieval = False
 do_retrieval = True
-retrieval_algorithm = 'snre'   # Options: 'MultiNest', 'sbi', 'npe', 'snpe', 'npe_c', 'snpe_c', 'npe_a', 'snpe_a', 'fmpe', 'npse', 'nle', 'snle', 'nle_a', 'snle_a', 'nre', 'snre', 'nre_a', 'snre_a', 'nre_b', 'snre_b', 'nre_c', 'snre_c', or 'bnre'
-# do_sbi_postprocess_only = True
+# do_retrieval = False
+retrieval_algorithm = 'fmpe'   # Options: 'MultiNest', 'sbi', 'npe', 'snpe', 'npe_c', 'snpe_c', 'npe_a', 'snpe_a', 'fmpe', 'npse', 'nle', 'snle', 'nle_a', 'snle_a', 'nre', 'snre', 'nre_a', 'snre_a', 'nre_b', 'snre_b', 'nre_c', 'snre_c', or 'bnre'
+do_sbi_postprocess_only = True
 do_sbi_postprocess_only = False  # True -> reuse SBI_raw samples, skip SBI rounds
 
 #data_included = 'NIRISS'
-data_included = 'NIRISS_WFC3'
+# data_included = 'NIRISS_WFC3'
 #data_included = 'G395H'
-#data_included = 'NIRISS_G395H'
+data_included = 'NIRISS_G395H_Tiberius'
 
 
 #model_name = 'joint_flat_CLR_' + data_included
 #model_name = 'joint_multigas-H2O_TS_CLR_' + data_included
-model_name = retrieval_algorithm.upper() + '_joint_multigas_' + data_included
+model_name = retrieval_algorithm.upper() + '_joint_multigas_32000_' + data_included
 
 
 stellar_contam = None
@@ -63,7 +63,7 @@ stellar_contam = None
 #***** Model wavelength grid *****#
 
 wl_min = 0.58      # Minimum wavelength (um)           2.8
-wl_max = 2.90      # Maximum wavelength (um)           5.3
+wl_max = 5.30      # Maximum wavelength (um)           5.3
 R = 20000          # Spectral resolution of grid
 
 # We need to provide a model wavelength grid to initialise instrument properties
@@ -71,34 +71,33 @@ wl = wl_grid_constant_R(wl_min, wl_max, R)
 
 #***** Define stellar properties *****#
 
-R_s = 0.58*R_Sun      # Stellar radius (m)
-T_s = 4236.0          # Stellar effective temperature (K)
-err_T_s = 12          # Value in ExoMast
-Met_s = -0.29         # Stellar metallicity [log10(Fe/H_star / Fe/H_solar)]
-log_g_s = 4.719       # Stellar log surface gravity (log10(cm/s^2) by convention)
-err_log_g_s = 0.02
+R_s = 0.38*R_Sun      # Stellar radius (m)
+T_s = 3506.0          # Stellar effective temperature (K)
+err_T_s = 70          # Value in ExoMast
+Met_s = -0.20         # Stellar metallicity [log10(Fe/H_star / Fe/H_solar)]
+log_g_s = 4.872       # Stellar log surface gravity (log10(cm/s^2) by convention)
 
 # Create the stellar object
-#star = create_star(R_s, T_s, log_g_s, Met_s, T_eff_error = err_T_s, wl = wl)
-star = create_star(R_s, T_s, log_g_s, Met_s, T_eff_error = err_T_s, 
-                  stellar_grid = 'phoenix',
-                #   interp_backend = 'pymsg',
-                  wl = wl)
+star = create_star(R_s, T_s, log_g_s, Met_s, T_eff_error = err_T_s, wl = wl)
+# star = create_star(R_s, T_s, log_g_s, Met_s, T_eff_error = err_T_s, 
+#                   stellar_grid = 'phoenix',
+#                   interp_backend = 'pymsg',
+#                   wl = wl)
 
 #***** Define planet properties *****#
 
-planet_name = 'GJ-9827d'  # Planet name used for plots, output files etc.
+planet_name = 'TOI-270d'  # Planet name used for plots, output files etc.
 
-R_p = 1.89*R_E     # Planetary radius (m)
-M_p = 3.02*M_E      # Planet mass
-T_eq = 599.68       # Equilibrium temperature (K)
-d = 29.6610*pc       # Distance to system (m)
+R_p = 2.133*R_E     # Planetary radius (m)
+M_p = 4.78*M_E      # Planet mass
+T_eq = 387.8       # Equilibrium temperature (K)
+d = 22.453*pc       # Distance to system (m)
 
 # Create the planet object
 planet = create_planet(planet_name, R_p, mass = M_p, T_eq = T_eq, d = d)
 
 # SBI training schedule
-sbi_round_sizes = (16000,8000,8000)
+sbi_round_sizes = (32000,)
 
 if '__file__' in globals():
     RUN_DIR = Path(__file__).resolve().parents[1]
@@ -121,17 +120,42 @@ os.chdir(RUN_DIR)
 
 data_dir = str(DATA_ROOT / planet_name)
 
-datasets = [planet_name + '_NIRISS_SOSS_Ord2.dat',
-            planet_name + '_NIRISS_SOSS_Ord1.dat',
-            planet_name + '_WFC3_G141.dat',
-            ]
+datasets = []
+instruments = []
 
-instruments = ['JWST_NIRISS_SOSS_Ord2', 
-               'JWST_NIRISS_SOSS_Ord1',
-               'WFC3_G141']
+if ('NIRISS' in data_included):
 
-data = load_data(data_dir, datasets, instruments, wl, 
-                 offset_datasets = [planet_name + '_WFC3_G141.dat'])
+    datasets.append(planet_name + '_NIRISS_SOSS_Ord2_ExoTEP.dat')
+    datasets.append(planet_name + '_NIRISS_SOSS_Ord1_ExoTEP.dat')
+    instruments.append('JWST_NIRISS_SOSS_Ord2')
+    instruments.append('JWST_NIRISS_SOSS_Ord1')
+
+if ('G395H_Eureka-feature' in data_included):
+
+    datasets.append(planet_name + '_NIRSpec_G395H_NRS1_Eureka.dat',)
+    datasets.append(planet_name + '_NIRSpec_G395H_NRS2_Eureka-CS2.dat')
+    instruments.append('JWST_NIRSPec_G395H_NRS1')
+    instruments.append('JWST_NIRSPec_G395H_NRS2')
+elif ('G395H_Eureka' in data_included):
+
+    datasets.append(planet_name + '_NIRSpec_G395H_NRS1_Eureka.dat',)
+    datasets.append(planet_name + '_NIRSpec_G395H_NRS2_Eureka.dat')
+    instruments.append('JWST_NIRSPec_G395H_NRS1')
+    instruments.append('JWST_NIRSPec_G395H_NRS2')
+elif ('G395H_Tiberius-feature' in data_included):
+
+    datasets.append(planet_name + '_NIRSpec_G395H_NRS1_Tiberius.dat',)
+    datasets.append(planet_name + '_NIRSpec_G395H_NRS2_Tiberius-CS2.dat')
+    instruments.append('JWST_NIRSPec_G395H_NRS1')
+    instruments.append('JWST_NIRSPec_G395H_NRS2')
+elif ('G395H_Tiberius' in data_included):
+
+    datasets.append(planet_name + '_NIRSpec_G395H_NRS1_Tiberius.dat',)
+    datasets.append(planet_name + '_NIRSpec_G395H_NRS2_Tiberius.dat')
+    instruments.append('JWST_NIRSPec_G395H_NRS1')
+    instruments.append('JWST_NIRSPec_G395H_NRS2')
+
+data = load_data(data_dir, datasets, instruments, wl)
 
 
 # %% [markdown]
@@ -145,8 +169,8 @@ if ('multigas' in model_name):
 
    bulk_species = ['H2', 'He']     # H2 + He comprises the bulk atmosphere
 
-   param_species = ['N2', 'HCN', 'H2O', 'CO', 'CO2', 'CH4', 'NH3', 'H2S']
-
+   param_species = ['H2O', 'CH4', 'CO2', 'SO2', 'CO', 'NH3', 'N2', 'CS2']
+   
    if ('clear' in model_name):
       surface = False
       cloud_model = 'cloud-free'
@@ -161,9 +185,30 @@ if ('multigas' in model_name):
                         PT_profile = 'isotherm', cloud_model = cloud_model,
                         cloud_type = cloud_type,
                         stellar_contam = stellar_contam,
-                        offsets_applied = 'single_dataset',
+                        # offsets_applied = 'single_dataset',
                        )
+elif ('minimal' in model_name):
 
+   bulk_species = ['H2', 'He']     # H2 + He comprises the bulk atmosphere
+
+   param_species = ['H2O', 'CH4', 'CO2', 'CS2']
+   
+   if ('clear' in model_name):
+      surface = False
+      cloud_model = 'cloud-free'
+      cloud_type = 'deck_haze'
+   else:
+      surface = False
+      cloud_model = 'MacMad17'
+      cloud_type = 'deck_haze'
+
+   model = define_model(model_name, bulk_species, param_species, 
+                        radius_unit = 'R_E', surface = surface,
+                        PT_profile = 'isotherm', cloud_model = cloud_model,
+                        cloud_type = cloud_type,
+                        stellar_contam = stellar_contam,
+                        # offsets_applied = 'single_dataset',
+                       )
 elif ('H2O' in model_name):
 
    bulk_species = ['H2O']
@@ -174,7 +219,7 @@ elif ('H2O' in model_name):
                         PT_profile = 'isotherm', cloud_model = 'MacMad17',
                         cloud_type = 'deck_haze',
                         stellar_contam = stellar_contam,
-                        offsets_applied = 'single_dataset',
+                        # offsets_applied = 'single_dataset',
                        )
    
 elif ('flat' in model_name):
@@ -186,7 +231,7 @@ elif ('flat' in model_name):
                         radius_unit = 'R_E', surface = True,
                         disable_atmosphere = True,
                         stellar_contam = stellar_contam,
-                        offsets_applied = 'single_dataset',
+                        # offsets_applied = 'single_dataset',
                         )
 
 #***** Set priors for retrieval *****#
@@ -240,9 +285,9 @@ prior_ranges['f_cloud'] = [0, 1]
 prior_ranges['f_het'] = [0.0, 0.5]
 prior_ranges['T_het'] = [2300, 1.2*T_s]
 prior_ranges['T_phot'] = [T_s, err_T_s]
-prior_ranges['log_g_het'] = [3.0, 5.4]
-prior_ranges['log_g_phot'] = [log_g_s, err_log_g_s]
-prior_ranges['delta_rel'] = [-500, +500]
+# prior_ranges['log_g_het'] = [3.0, 5.4]
+# prior_ranges['log_g_phot'] = [log_g_s, err_log_g_s]
+# prior_ranges['delta_rel'] = [-500, +500]
 
 prior_ranges['f_spot'] = [0.0, 0.5]
 prior_ranges['f_fac'] = [0.0, 0.5]
@@ -307,7 +352,7 @@ if (do_retrieval == True):
     if (retrieval_algorithm.lower() in ['sbi', 'npe', 'snpe', 'npe_c', 'snpe_c', 'npe_a', 'snpe_a', 'fmpe', 'npse', 'nle', 'snle', 'nle_a', 'snle_a', 'nre', 'snre', 'nre_a', 'snre_a', 'nre_b', 'snre_b', 'nre_c', 'snre_c', 'bnre']):
         print('Starting SBI quick benchmark with round sizes:', sbi_round_sizes)
         t0 = time.perf_counter()
-
+        
         run_retrieval(planet, star, model, opac, data, priors, wl, P, P_ref, R = R,
                       spectrum_type = 'transmission', sampling_algorithm = retrieval_algorithm,
                       verbose = True, resume = False,
@@ -315,7 +360,7 @@ if (do_retrieval == True):
                       sbi_training_batch_size = 256,
                       sbi_posterior_samples = 20000,
                       sbi_device = 'cpu',
-                      sbi_density_estimator = 'resnet', #NRE/SNRE use a classifier called resnet instead of nsf or maf
+                      sbi_density_estimator = 'nsf',
                       sbi_hidden_features = 128,
                       sbi_num_transforms = 5,
                       sbi_seed = 0)
@@ -498,7 +543,7 @@ data_marker_size_list = [5] * n_data_sets
 wl_min = float(np.min(wl_ret))
 wl_max = float(np.max(wl_ret))
 
-plot_spectra_retrieved(
+_ = plot_spectra_retrieved(
     spectra_median,
     spectra_low2,
     spectra_low1,
@@ -522,7 +567,7 @@ plot_spectra_retrieved(
     wl_max=wl_max,
     legend_location='upper right',
     sigma_to_plot=2,
-    add_retrieved_offsets=True,
+    # add_retrieved_offsets=True,
     model=model,
 )
 
@@ -618,7 +663,7 @@ if os.path.exists(sbi_samples_file):
             legend_location='upper right',
             save_fig=False,
             ax=ax_spectrum,
-            add_retrieved_offsets=True,
+            # add_retrieved_offsets=True,
             model=model,
         )
 
@@ -637,6 +682,9 @@ if os.path.exists(sbi_samples_file):
             save_fig=False,
             retrieval_codes=['SBI'],
             retrieval_labels=['POSEIDON-SBI'],
+            tick_labelsize = 12, 
+            title_fontsize = 12,
+            # title_vert_spacing = 0.2,
             external_samples=[sbi_samples],
             external_param_names=[external_param_names],
         )
@@ -646,6 +694,9 @@ if os.path.exists(sbi_samples_file):
         print('Saved combined spectrum+histogram plot to', str(out_file))
 else:
     print('No samples file found; skipping histogram panel:', sbi_samples_file)
+
+
+# %%
 
 
 

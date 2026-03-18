@@ -51,7 +51,7 @@ data_included = 'NIRISS_WFC3'
 
 #model_name = 'joint_flat_CLR_' + data_included
 #model_name = 'joint_multigas-H2O_TS_CLR_' + data_included
-model_name = 'NLE' + '_joint_multigas_' + data_included
+model_name = retrieval_algorithm.upper() + '_joint_multigas_' + data_included
 
 
 stellar_contam = None
