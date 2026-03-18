@@ -433,7 +433,7 @@ if (retrieval_algorithm.lower() in ['sbi', 'npe', 'snpe', 'npe_c', 'snpe_c', 'np
             labels = list(model['param_names']),
             figsize = (11, 11),
         )
-        plt.show()
+        
 
 
 # %% [markdown]
@@ -478,7 +478,7 @@ if os.path.exists(sbi_samples_file):
                 external_param_names=[params_to_plot],
                 N_bins=30,
             )
-            plt.show()
+            
             print('Saved POSEIDON-style corner plot to ' +
                   str(OUTPUT_ROOT / planet_name / 'retrievals' / 'results' /
                       ((model_name + '_sbi') + '_corner_overplot.pdf')))
@@ -490,7 +490,7 @@ if os.path.exists(sbi_samples_file):
             )
             pairplot_file = str(OUTPUT_ROOT / planet_name / 'plots' / (model_name + '_sbi_pairplot.png'))
             plt.savefig(pairplot_file, dpi=200)
-            plt.show()
+            
             print('Saved sbi pairplot to ' + pairplot_file)
 else:
     print('No samples file found; skipping posterior plot:', sbi_samples_file)
