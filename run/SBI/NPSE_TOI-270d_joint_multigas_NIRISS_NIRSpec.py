@@ -39,7 +39,7 @@ from scipy.constants import parsec as pc
 
 do_retrieval = True
 # do_retrieval = False
-retrieval_algorithm = 'fmpe'   # Options: 'MultiNest', 'sbi', 'npe', 'snpe', 'npe_c', 'snpe_c', 'npe_a', 'snpe_a', 'fmpe', 'npse', 'nle', 'snle', 'nle_a', 'snle_a', 'nre', 'snre', 'nre_a', 'snre_a', 'nre_b', 'snre_b', 'nre_c', 'snre_c', or 'bnre'
+retrieval_algorithm = 'npse'   # Options: 'MultiNest', 'sbi', 'npe', 'snpe', 'npe_c', 'snpe_c', 'npe_a', 'snpe_a', 'fmpe', 'npse', 'nle', 'snle', 'nle_a', 'snle_a', 'nre', 'snre', 'nre_a', 'snre_a', 'nre_b', 'snre_b', 'nre_c', 'snre_c', or 'bnre'
 do_sbi_postprocess_only = True
 do_sbi_postprocess_only = False  # True -> reuse SBI_raw samples, skip SBI rounds
 
@@ -51,7 +51,7 @@ data_included = 'NIRISS_G395H_Tiberius'
 
 #model_name = 'joint_flat_CLR_' + data_included
 #model_name = 'joint_multigas-H2O_TS_CLR_' + data_included
-model_name = retrieval_algorithm.upper() + '_joint_multigas_32000_' + data_included
+model_name = retrieval_algorithm.upper() + '_joint_multigas_64000_' + data_included
 
 
 stellar_contam = None
@@ -97,7 +97,7 @@ d = 22.453*pc       # Distance to system (m)
 planet = create_planet(planet_name, R_p, mass = M_p, T_eq = T_eq, d = d)
 
 # SBI training schedule
-sbi_round_sizes = (32000,)
+sbi_round_sizes = (64000,)
 
 if '__file__' in globals():
     RUN_DIR = Path(__file__).resolve().parents[1]
