@@ -30,7 +30,7 @@ from .utility import create_directories, write_spectrum, read_data, mock_missing
 from .stellar import planck_lambda, load_stellar_pysynphot
 try:
     from .stellar import load_stellar_pymsg, open_pymsg_grid
-except ImportError:
+except Exception:
     load_stellar_pymsg = mock_missing('pymsg')
     open_pymsg_grid = mock_missing('pymsg')
 from .supported_chemicals import supported_species, supported_cia, inactive_species, \

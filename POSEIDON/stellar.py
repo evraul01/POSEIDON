@@ -16,7 +16,7 @@ from .utility import mock_missing, shared_memory_array
 
 try:
     import pymsg as pymsg
-except ImportError:
+except Exception:
     pymsg = mock_missing('pymsg')
 
 _PYSYN_PATH_NOTICE_PRINTED = False
