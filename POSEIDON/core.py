@@ -26,9 +26,13 @@ from spectres import spectres
 from scipy.constants import parsec
 
 from .constants import R_J, R_E, M_J, M_E
-from .utility import create_directories, write_spectrum, read_data
-from .stellar import planck_lambda, load_stellar_pysynphot, load_stellar_pymsg, \
-                     open_pymsg_grid
+from .utility import create_directories, write_spectrum, read_data, mock_missing
+from .stellar import planck_lambda, load_stellar_pysynphot
+try:
+    from .stellar import load_stellar_pymsg, open_pymsg_grid
+except ImportError:
+    load_stellar_pymsg = mock_missing('pymsg')
+    open_pymsg_grid = mock_missing('pymsg')
 from .supported_chemicals import supported_species, supported_cia, inactive_species, \
                                  fastchem_supported_species, aerosol_supported_species, \
                                  aerosols_lognormal_logwidth_free, aerosol_directional_supported_species, \
@@ -46,8 +50,6 @@ from .emission import emission_single_stream, determine_photosphere_radii, \
                       emission_Toon, reflection_Toon
 
 from .clouds import compute_relevant_Mie_properties
-
-from .utility import mock_missing
 
 try:
     import cupy as cp

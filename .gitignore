@@ -29,3 +29,5 @@ pyproject.toml
 uv.lock
 run/sbi-logs
 *conda*tar.gz
+*condor*
+POSEIDON_source.tar.gz

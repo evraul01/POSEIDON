@@ -197,9 +197,7 @@ def open_pymsg_grid(stellar_grid):
     '''
 
     # Check if pymsg is installed (required for this optional functionality)
-    try:
-        import pymsg as pymsg
-    except ImportError:
+    if not hasattr(pymsg, 'SpecGrid'):
         raise Exception("PyMSG is not installed on this machine. PyMSG " +
                         "is an optional add-on to POSEIDON, so please " +
                         "either install it or fall back on the default " +
