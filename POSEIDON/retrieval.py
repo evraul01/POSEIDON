@@ -868,7 +868,13 @@ def transform_prior_unit_cube(cube, model, prior_types, prior_ranges):
     species_DN_gradient = model['species_DN_gradient']
 
     N_species_params = len(X_params)
-    cube = np.array(cube, dtype=np.float64, copy=True)
+    try:
+        cube = np.array(cube, dtype=np.float64, copy=True)
+    except (TypeError, ValueError):
+        # PyMultiNest can pass a ctypes pointer with an incompatible buffer format.
+        cube = np.ctypeslib.as_array(cube, shape=(len(param_names),)).astype(
+            np.float64, copy=True
+        )
     simplex_allowed = 1
 
     for i, parameter in enumerate(param_names):
