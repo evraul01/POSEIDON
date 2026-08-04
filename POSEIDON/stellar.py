@@ -3,6 +3,7 @@ Stellar spectra and star spot/faculae contamination calculations.
 
 '''
 
+import inspect
 import os
 import numpy as np
 from pathlib import Path
@@ -14,9 +15,12 @@ from mpi4py import MPI
 
 from .utility import mock_missing, shared_memory_array
 
+_PYMSG_IMPORT_ERROR = None
+
 try:
     import pymsg as pymsg
-except Exception:
+except Exception as exc:
+    _PYMSG_IMPORT_ERROR = exc
     pymsg = mock_missing('pymsg')
 
 _PYSYN_PATH_NOTICE_PRINTED = False
@@ -198,10 +202,12 @@ def open_pymsg_grid(stellar_grid):
 
     # Check if pymsg is installed (required for this optional functionality)
     if not hasattr(pymsg, 'SpecGrid'):
-        raise Exception("PyMSG is not installed on this machine. PyMSG " +
-                        "is an optional add-on to POSEIDON, so please " +
-                        "either install it or fall back on the default " +
-                        "interpolation scheme interp_backend = 'pysynphot'.")
+        raise ImportError(
+            "PyMSG could not be imported. It may be missing, compiled for a "
+            "different Python version, or unable to find MSG_DIR/native "
+            "libraries. Install/configure PyMSG or use "
+            "interp_backend = 'pysynphot'."
+        ) from _PYMSG_IMPORT_ERROR
     
     # Allow alias 'phoenix' for pymsg stellar grid
     if (stellar_grid.lower() == 'phoenix'):
@@ -273,8 +279,12 @@ def load_stellar_pymsg(wl_out, specgrid, T_eff, Met, log_g, stellar_grid):
     elif (stellar_grid.lower() == 'sphinx'):
         x = {'Teff': T_eff, 'log(g)': log_g, '[Fe/H]': Met, 'C/O': 0.55}   # FIXING stellar C/O to solar (for now)
 
-    # Interpolate stellar grid to obtain stellar flux (also handles wl interpolation)
-    F_s = specgrid.flux(x, wl_edges*10000)   # PyMSG expects Angstroms
+    # PyMSG 2.x requires an explicit redshift; POSEIDON uses rest-frame spectra.
+    flux_parameters = inspect.signature(specgrid.flux).parameters
+    if ('z' in flux_parameters):
+        F_s = specgrid.flux(x, z = 0.0, lam = wl_edges*10000)
+    else:
+        F_s = specgrid.flux(x, wl_edges*10000)
     F_s = np.array(F_s) * 1e7   # Convert flux from erg/s/cm^2/A to W/m^2/m
 
     # Calculate average specific intensity
