@@ -1,0 +1,293 @@
+{
+  "figure_type": "synthetic_explanatory_demonstration",
+  "observational_result": false,
+  "description": "Synthetic demonstration of posterior-sample-reweighted hierarchical inference for a gas-planet atmospheric mass-metallicity relation.",
+  "relation": "log10(Z_atm/Z_star) = alpha + beta*log10(M_p/M_J) + epsilon; epsilon ~ Normal(0, sigma_intrinsic)",
+  "config": {
+    "paths": {
+      "data_directory": "/home/eraul/wisconsin/work/atmosphere_research_2026/POSEIDON/run/data/FINESST_26/Figure_3",
+      "figure_directory": "/home/eraul/wisconsin/work/atmosphere_research_2026/POSEIDON/run/POSEIDON_output/WASP-107b/plots/FINESST",
+      "reference_paper": "/home/eraul/wisconsin/work/atmosphere_research_2026/POSEIDON/run/POSEIDON_output/WASP-107b/plots/FINESST/Lustig-Yaeger_2022_AJ_163_140.pdf",
+      "output_stem": "figure3_HBM_population_demo"
+    },
+    "synthetic": {
+      "random_seed": 270107,
+      "n_planets": 30,
+      "mass_range_mj": [
+        0.03,
+        10.0
+      ],
+      "true_intercept": 0.68,
+      "true_slope": -0.62,
+      "true_intrinsic_scatter": 0.22,
+      "retrieval_prior_range": [
+        -1.0,
+        2.5
+      ],
+      "posterior_samples_per_planet": 3000,
+      "inference_samples_per_planet": 600,
+      "n_tight": 8,
+      "n_moderate": 11,
+      "n_weak": 9,
+      "n_upper_limit": 2,
+      "tight_sigma_range": [
+        0.09,
+        0.16
+      ],
+      "moderate_sigma_range": [
+        0.2,
+        0.34
+      ],
+      "weak_sigma_range": [
+        0.42,
+        0.68
+      ],
+      "skewed_fraction": 0.22,
+      "mixture_fraction": 0.22,
+      "upper_limit_offset_range": [
+        0.22,
+        0.42
+      ],
+      "upper_limit_transition_width": 0.08
+    },
+    "grid": {
+      "alpha_range": [
+        -0.2,
+        1.55
+      ],
+      "beta_range": [
+        -1.45,
+        0.35
+      ],
+      "sigma_range": [
+        0.05,
+        0.65
+      ],
+      "n_alpha": 31,
+      "n_beta": 37,
+      "n_sigma": 25,
+      "evaluation_chunk_size": 256,
+      "n_hyperparameter_samples": 30000,
+      "relation_grid_size": 300,
+      "run_grid_convergence_check": true,
+      "coarse_grid_stride": 2
+    },
+    "style": {
+      "use_sans_serif": false,
+      "serif_font": "DejaVu Serif",
+      "sans_serif_font": "DejaVu Sans",
+      "axis_label_size": 12.5,
+      "tick_label_size": 10.5,
+      "legend_size": 8.5,
+      "annotation_size": 8.5,
+      "panel_label_size": 13.0,
+      "axes_line_width": 0.8,
+      "tick_length": 4.0,
+      "minor_tick_length": 2.2,
+      "line_width": 1.7,
+      "posterior_color": "#0072B2",
+      "recovered_color": "#D55E00",
+      "truth_color": "#009E73",
+      "null_color": "#4D4D4D",
+      "upper_limit_color": "#6A3D9A"
+    },
+    "layout": {
+      "figure_width_inches": 7.5,
+      "figure_height_inches": 4.7,
+      "width_ratios": [
+        1.0,
+        1.0
+      ],
+      "horizontal_space": 0.19,
+      "left_margin": 0.085,
+      "right_margin": 0.985,
+      "bottom_margin": 0.14,
+      "top_margin": 0.955
+    },
+    "panels": {
+      "x_label": "$\\log_{10}(M_p/M_J)$",
+      "y_label": "$\\log_{10}(Z_{\\rm atm}/Z_\\star)$",
+      "x_limits": null,
+      "y_limits": [
+        -1.02,
+        2.52
+      ],
+      "show_minor_ticks": true,
+      "show_synthetic_truth_points": true,
+      "show_synthetic_truth_relation": true,
+      "show_synthetic_label_each_panel": false,
+      "synthetic_label": "Synthetic demonstration",
+      "synthetic_label_figure_xy": [
+        0.5,
+        0.985
+      ],
+      "violin_grid_size": 220,
+      "violin_width_fraction": 0.34,
+      "violin_bandwidth": 0.22,
+      "violin_density_floor_fraction": 0.012,
+      "violin_alpha_by_class": {
+        "tight": 0.58,
+        "moderate": 0.46,
+        "weak": 0.3,
+        "upper_limit": 0.25
+      },
+      "upper_limit_hatch": "///",
+      "posterior_median_marker_size": 2.8,
+      "truth_marker_size": 2.5,
+      "truth_relation_kwargs": {
+        "linestyle": ":",
+        "linewidth": 1.35,
+        "alpha": 0.85
+      },
+      "input_relation_kwargs": {
+        "linestyle": "--",
+        "linewidth": 1.25,
+        "alpha": 0.65
+      },
+      "recovered_relation_kwargs": {
+        "linestyle": "-",
+        "linewidth": 1.9,
+        "zorder": 6
+      },
+      "null_relation_kwargs": {
+        "linestyle": "--",
+        "linewidth": 1.5,
+        "zorder": 5
+      },
+      "mean_band_alpha": 0.3,
+      "predictive_band_alpha": 0.13,
+      "background_interval_alpha": 0.23,
+      "panel_a_legend_kwargs": {
+        "loc": "lower left",
+        "frameon": false,
+        "ncol": 1,
+        "handlelength": 1.8,
+        "handletextpad": 0.5
+      },
+      "panel_b_legend_kwargs": {
+        "loc": "lower left",
+        "bbox_to_anchor": [
+          0.01,
+          0.01
+        ],
+        "frameon": false,
+        "ncol": 1,
+        "handlelength": 1.9,
+        "handletextpad": 0.5
+      },
+      "hyperparameter_annotation_axes_xy": [
+        0.6,
+        0.045
+      ],
+      "hyperparameter_annotation_fontsize": 8.5,
+      "inset_bounds": [
+        0.52,
+        0.55,
+        0.44,
+        0.37
+      ],
+      "inset_x_label": "Population slope, $\\beta$",
+      "inset_tick_label_size": 7.5,
+      "inset_axis_label_size": 8.0,
+      "inset_density_color": "#D55E00",
+      "inset_interval_alpha": 0.3,
+      "no_mass_dependence_label": "No mass\ndependence",
+      "no_mass_dependence_text_xy": [
+        0.0,
+        0.94
+      ],
+      "no_mass_dependence_fontsize": 6.8
+    }
+  },
+  "recovered_quantiles_16_50_84": {
+    "alpha": [
+      0.6009415925853274,
+      0.6710158725886268,
+      0.7420568331553562
+    ],
+    "beta": [
+      -0.7130503227748846,
+      -0.6198666436552003,
+      -0.5270074591114023
+    ],
+    "sigma_intrinsic": [
+      0.2065840226797078,
+      0.2539822499316229,
+      0.3132576585196751
+    ],
+    "null_alpha": [
+      0.701915824820432,
+      0.8014256211521655,
+      0.9066846601402909
+    ],
+    "null_sigma_intrinsic": [
+      0.4132698637987359,
+      0.4832936073429056,
+      0.5638869352458881
+    ]
+  },
+  "log_evidence_full": 22.688571270437286,
+  "log_evidence_null": 10.968727266549607,
+  "log_bayes_factor_full_vs_null": 11.71984400388768,
+  "grid_convergence": {
+    "performed": true,
+    "coarse_grid_stride": 2,
+    "fine_weighted_quantiles": {
+      "alpha": [
+        0.6166666666666667,
+        0.675,
+        0.7333333333333334
+      ],
+      "beta": [
+        -0.7000000000000001,
+        -0.6,
+        -0.55
+      ],
+      "sigma_intrinsic": [
+        0.2,
+        0.25,
+        0.32499999999999996
+      ]
+    },
+    "coarse_weighted_quantiles": {
+      "alpha": [
+        0.6166666666666667,
+        0.6166666666666667,
+        0.7333333333333334
+      ],
+      "beta": [
+        -0.75,
+        -0.65,
+        -0.55
+      ],
+      "sigma_intrinsic": [
+        0.2,
+        0.25,
+        0.3
+      ]
+    },
+    "median_absolute_differences": {
+      "alpha": 0.05833333333333335,
+      "beta": 0.050000000000000044,
+      "sigma_intrinsic": 0.0
+    }
+  },
+  "validation": {
+    "alpha_truth_inside_68pct": true,
+    "beta_truth_inside_68pct": true,
+    "sigma_truth_inside_68pct": true,
+    "minimum_importance_ess": 602.8427042471949,
+    "median_importance_ess": 2254.133854333269,
+    "upper_limit_cases_retained": 2
+  },
+  "method_reference": {
+    "citation": "Lustig-Yaeger et al. 2022, AJ, 163, 140",
+    "doi": "10.3847/1538-3881/ac5034",
+    "arxiv": "2202.00701",
+    "local_pdf": "/home/eraul/wisconsin/work/atmosphere_research_2026/POSEIDON/run/POSEIDON_output/WASP-107b/plots/FINESST/Lustig-Yaeger_2022_AJ_163_140.pdf",
+    "local_pdf_sha256": "62cc8f84c69d96ecd7d9d5120e7e158205c1ea03b2ba77185fc35b10b0951d02",
+    "note": "The reference motivates HBAR; no values were digitized from it. All plotted planets and numerical values are synthetic."
+  },
+  "script": "/home/eraul/wisconsin/work/atmosphere_research_2026/POSEIDON/run/FINESST/FINESST_HBM_Population_Demonstration.py",
+  "script_sha256": "e4e485e692c66aa249a19fc5fb9999f938987416ddfa837d2612f3a4ac8eff3c"
+}

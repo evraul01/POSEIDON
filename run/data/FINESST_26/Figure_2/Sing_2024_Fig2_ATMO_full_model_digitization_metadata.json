@@ -1,0 +1,147 @@
+{
+  "source": {
+    "article": "Sing et al. (2024), Nature 630, 831-835",
+    "doi": "10.1038/s41586-024-07395-z",
+    "figure": 2,
+    "url": "https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41586-024-07395-z/MediaObjects/41586_2024_7395_Fig2_HTML.png",
+    "cached_image": "/home/eraul/wisconsin/work/atmosphere_research_2026/POSEIDON/run/data/FINESST_26/Figure_2/Sing_2024_Fig2_official_full.png",
+    "sha256": "6ac30dd3a3bb6a479a1ee07814381d32c90681b94f11aaed2185b70ca138d1aa",
+    "image_shape_pixels": [
+      1143,
+      2086,
+      3
+    ]
+  },
+  "method": {
+    "description": "RGB stroke extraction with printed-tick axis calibration",
+    "config": {
+      "model_rgb": [
+        153,
+        51,
+        51
+      ],
+      "rgb_distance_tolerance": 10.0,
+      "extraction_x_pixels": [
+        159,
+        2066
+      ],
+      "extraction_y_pixels": [
+        40,
+        599
+      ],
+      "diagnostic_dpi": 180
+    },
+    "axis_calibration": {
+      "x_tick_pixels": [
+        159.0,
+        232.5,
+        305.5,
+        379.0,
+        452.5,
+        525.5,
+        599.0,
+        672.5,
+        745.5,
+        819.0,
+        892.5,
+        965.5,
+        1039.0,
+        1112.5,
+        1185.5,
+        1259.0,
+        1332.5,
+        1405.5,
+        1479.0,
+        1552.5,
+        1625.5,
+        1699.0,
+        1772.5,
+        1845.5,
+        1919.0,
+        1992.5,
+        2065.5
+      ],
+      "x_tick_values_microns": [
+        2.6,
+        2.7,
+        2.8000000000000003,
+        2.9000000000000004,
+        3.0000000000000004,
+        3.1000000000000005,
+        3.2000000000000006,
+        3.3000000000000007,
+        3.400000000000001,
+        3.500000000000001,
+        3.600000000000001,
+        3.700000000000001,
+        3.800000000000001,
+        3.9000000000000012,
+        4.000000000000002,
+        4.100000000000001,
+        4.200000000000001,
+        4.300000000000002,
+        4.400000000000002,
+        4.500000000000002,
+        4.600000000000001,
+        4.700000000000002,
+        4.8000000000000025,
+        4.900000000000002,
+        5.000000000000002,
+        5.100000000000002,
+        5.200000000000003
+      ],
+      "y_tick_pixels": [
+        40.5,
+        124.5,
+        207.5,
+        290.5,
+        374.5,
+        457.5,
+        540.5,
+        624.5,
+        707.5,
+        790.5,
+        874.5,
+        957.5,
+        1040.5
+      ],
+      "y_tick_values_radius_ratio": [
+        0.149,
+        0.148,
+        0.147,
+        0.146,
+        0.145,
+        0.144,
+        0.143,
+        0.142,
+        0.141,
+        0.13999999999999999,
+        0.13899999999999998,
+        0.13799999999999998,
+        0.13699999999999998
+      ],
+      "x_slope_microns_per_pixel": 0.0013636533150829478,
+      "x_intercept_microns": 2.3831629625227353,
+      "y_slope_radius_ratio_per_pixel": -1.200051810431285e-05,
+      "y_intercept_radius_ratio": 0.1494899725024901,
+      "x_max_calibration_residual_microns": 0.00024219282550674848,
+      "y_max_calibration_residual_radius_ratio": 4.480579731458434e-06
+    },
+    "visible_source_pixel_fraction": 0.5822851153039832,
+    "interpolated_source_pixel_fraction": 0.41771488469601675,
+    "maximum_consecutive_interpolated_pixels": 18,
+    "one_pixel_wavelength_microns": 0.0013636533150829478,
+    "one_pixel_radius_ratio": 1.200051810431285e-05,
+    "guardrail": "This is digitization of a published curve, not a new model calculation."
+  },
+  "validation_against_published_data": {
+    "n_observations": 576,
+    "mean_squared_standardized_residual": 1.541551837432387,
+    "median_absolute_standardized_residual": 1.084825806505782,
+    "note": "Diagnostic only; no fit or adjustment was applied to the digitized trace."
+  },
+  "outputs": {
+    "digitized_model_csv": "/home/eraul/wisconsin/work/atmosphere_research_2026/POSEIDON/run/data/FINESST_26/Figure_2/Sing_2024_Fig2_ATMO_full_model_digitized.csv",
+    "diagnostic_overlay_png": "/home/eraul/wisconsin/work/atmosphere_research_2026/POSEIDON/run/POSEIDON_output/WASP-107b/plots/FINESST/Sing_2024_Fig2_ATMO_digitization_validation.png"
+  }
+}
