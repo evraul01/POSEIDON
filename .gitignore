@@ -32,3 +32,4 @@ run/sbi-logs
 *condor*
 POSEIDON_source.tar.gz
 *.egg-info
+*.pdf
