@@ -218,7 +218,7 @@ dependencies:
       - pexpect==4.9.0
       - platformdirs==4.9.2
       - pluggy==1.6.0
-      - poseidon==1.3.2
+      # - poseidon==1.3.2
       - prometheus-client==0.24.1
       - prompt-toolkit==3.0.52
       - protobuf==6.33.5
@@ -230,7 +230,7 @@ dependencies:
       - pygments==2.19.2
       - pyknos==0.16.0
       - pymc==5.25.1
-      - pymsg==2.0.2
+      # - pymsg==2.0.2
       - pyro-api==0.1.2
       - pyro-ppl==1.9.1
       - pysynphot==2.0.0

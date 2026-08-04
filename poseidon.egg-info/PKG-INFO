@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: poseidon
+Version: 0.1.0
+Summary: Add your description here
+Author: Ryan J. MacDonald
+Author-email: ryanjmac@umich.edu
+Requires-Python: <3.11.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: mpi4py>=4.1.1
+Requires-Dist: pymultinest>=2.12
+Dynamic: author
+Dynamic: author-email
+Dynamic: license-file
+Dynamic: requires-python
